@@ -88,7 +88,10 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri build -- --target universal-apple-darwin --bundles dmg,updater
+        # Az `app` bundle KELL explicit, hogy a `.app` mappa megmaradjon a
+        # `bundle/macos/`-ban (a portable tar.gz csomagoláshoz). Egyébként
+        # a Tauri csak a DMG-be ágyazza és törli külön a `.app`-ot.
+        run: npm run tauri build -- --target universal-apple-darwin --bundles app,dmg,updater
 
       - name: Build atman (Linux)
         if: matrix.platform == 'linux'
