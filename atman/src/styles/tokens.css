@@ -1,0 +1,99 @@
+:root {
+  /* Háttér rétegek */
+  --bg-app: #1f1f1e;
+  --bg-sidebar: #262626;
+  --bg-input: #353535;
+  --bg-elevated: #2a2a29;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.10);
+  --bg-popover: #2a2a29;
+
+  /* Régi nevek kompatibilitás miatt */
+  --bg-deep: #1f1f1e;
+  --bg-panel: #262626;
+
+  /* Brand - A korábbi arany helyett semleges fehér/szürke paletta.
+     A `--gold` és `--gold-muted` változó-NEVEK MEGMARADNAK, csak az
+     értékük változott - így az összes meglévő CSS hivatkozás
+     (`var(--gold)` stb.) automatikusan az új színt veszi fel,
+     nem kell egyenként átírni 12 fájlt. */
+  --gold: #f5f5f5;          /* "primary accent" = tört fehér */
+  --gold-muted: #6b6b6b;    /* "muted accent"  = közepes szürke */
+
+  /* Internet mód jelzőszín - kék (a globe toggle + web banner) */
+  --accent-web: #3b82f6;        /* fő kék */
+  --accent-web-muted: #1e40af;  /* sötétebb kék (border) */
+
+  /* Szövegszínek */
+  --text-primary: #f5f5f5;
+  --text-secondary: #c4c4c4;
+  --text-muted: #8a8a8a;
+  --text-dim: #5a5a5a;
+
+  /* Állapotszínek */
+  --accent-online: #22c55e;
+  --accent-warning: #eab308;
+  --accent-error: #ef4444;
+
+  /* Vonalak */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+
+  /* Sugarak */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  /* Méretek */
+  --sidebar-width: 260px;
+  --titlebar-height: 36px;
+
+  /* Tipográfia */
+  --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Roboto, sans-serif;
+
+  /* Árnyékok */
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* ============================================================
+   VILÁGOS TÉMA - `data-theme="light"` az <html> tag-en
+   ============================================================
+   A változó-NEVEK ugyanazok; csak az értékek cserélődnek le.
+   Így minden meglévő `var(--bg-app)` stb. automatikusan a
+   világos téma értékét veszi fel. */
+[data-theme="light"] {
+  /* Háttér rétegek - sima off-white skála */
+  --bg-app: #f7f7f5;
+  --bg-sidebar: #ededea;
+  --bg-input: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.045);
+  --bg-active: rgba(0, 0, 0, 0.08);
+  --bg-popover: #ffffff;
+  --bg-deep: #f7f7f5;
+  --bg-panel: #ededea;
+
+  /* Brand accent - sötét helyett szinte fekete */
+  --gold: #1f1f1e;
+  --gold-muted: #6b6b6b;
+
+  /* Internet mód kéke - kicsit sötétebb light theme-en, hogy
+     a fehér háttéren is olvasható kontraszttal álljon */
+  --accent-web: #2563eb;
+  --accent-web-muted: #1e3a8a;
+
+  /* Szövegszínek inverz skálán */
+  --text-primary: #18181b;
+  --text-secondary: #3f3f46;
+  --text-muted: #6b6b6b;
+  --text-dim: #a1a1aa;
+
+  /* Vonalak - sötét, alacsony alpha-val */
+  --border-subtle: rgba(0, 0, 0, 0.07);
+  --border-strong: rgba(0, 0, 0, 0.13);
+
+  /* Árnyékok - light theme-en lágyabb */
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+}

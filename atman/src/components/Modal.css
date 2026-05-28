@@ -1,0 +1,86 @@
+.modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  /* Light blur a háttéren - finom mélység-érzet, fókuszt ad a modalra. */
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: modalFade 0.15s ease-out;
+}
+/* Light témán enyhébb sötétítés a modal mögött, mert a blur úgyis ad
+   mélység-érzetet, és a fehér háttéren a sötét overlay túl kontrasztos. */
+[data-theme="light"] .modal__backdrop {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.modal__panel {
+  width: 100%;
+  margin: 16px;
+  background: var(--bg-popover);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalPop 0.18s ease-out;
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.modal__header h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+.modal__close {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.modal__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.modal__body {
+  padding: 16px 18px 18px;
+}
+
+@keyframes modalFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modalPop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Exit animációk - a Modal `is-closing` osztályt rak rá, mielőtt unmountolódna. */
+.modal__backdrop.is-closing {
+  animation: modalFadeOut 0.16s ease-in forwards;
+}
+.modal__panel.is-closing {
+  animation: modalPopOut 0.16s ease-in forwards;
+}
+@keyframes modalFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes modalPopOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(4px) scale(0.98); }
+}

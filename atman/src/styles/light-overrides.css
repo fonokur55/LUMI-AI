@@ -1,0 +1,397 @@
+/* ====================================================================
+   LIGHT THEME - felülíró stílusok azokra a helyekre, ahol HARDCODED
+   sötét-tematikájú RGBA-k vannak (pl. `rgba(255,255,255,X)` overlay-ek,
+   `#15171c` mint kódkártya háttér, stb.).
+   ====================================================================
+   A jelenlegi UI sok helyen használ átlátszó FEHÉR overlay-eket - ezek
+   alig látszanak fehér háttéren. Itt invertáljuk őket FEKETÉRE.
+   ==================================================================== */
+
+/* ============= ÁLTALÁNOS IKON-INVERZIÓ light témán =============
+   Az `/icons/*.png` fájlok eredetileg világos színűek (dark themához
+   tervezve). Light témán invertáljuk őket sötétre, hogy láthatóak
+   legyenek a fehér háttéren. */
+[data-theme="light"] img[src*="/icons/"] {
+  filter: invert(1) brightness(0.6);
+}
+
+/* ============= CSOPORT-IKONOK (ic1..ic12) =============
+   Ezeknek a forrás-PNG-knek FEKETE a kontúrjuk - light témán natív
+   állapotban (filter nélkül) jól látszanak, sötét témán viszont
+   láthatatlanok lennének. Ezért:
+   - Light témán: az általános /icons/ invert-szabály FELÜLÍRVA → natív.
+   - Dark témán (nem-light): invertáljuk fehérre, hogy a sötét háttéren
+     is jól látszódjon. */
+[data-theme="light"] img[src*="/icons/ic"] {
+  filter: none;
+}
+html:not([data-theme="light"]) img[src*="/icons/ic"] {
+  filter: invert(1) brightness(1.05);
+}
+/* Kivételek - ahol már explicit invertáljuk vagy nem kell: */
+/* Send gomb light témán: kék (accent-web) háttér + fehér nyíl.
+   Korábban a sötét/fekete háttér (a --text-primary light-on fekete) miatt
+   úgy nézett ki mint egy nehéz fekete labda - light témán kék sokkal
+   barátságosabb és felismerhető CTA. */
+[data-theme="light"] .chat-view__send {
+  background: var(--accent-web, #2563eb);
+  color: #ffffff;
+}
+[data-theme="light"] .chat-view__send:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+[data-theme="light"] .chat-view__send img {
+  /* A kék körön belül a nyíl LEGYEN fehér - függetlenül attól, hogy a
+     forrás-PNG eredetileg világos vagy sötét. A `brightness(0) invert(1)`
+     pár először feketévé teszi minden pixel-színt, majd invertálja
+     fehérre - garantáltan tiszta fehér nyíl. */
+  filter: brightness(0) invert(1);
+}
+[data-theme="light"] .copy-btn__icon {
+  /* Copy gomb light témán: nincs send-szerű sötét háttér,
+     csak a sima sötét szöveg-szín kell. */
+  filter: none;
+  opacity: 0.7;
+}
+[data-theme="light"] .copy-btn:hover .copy-btn__icon {
+  opacity: 1;
+}
+
+/* ============= MARKDOWN MESSAGE - kódkártya, idézet, inline kód ============= */
+[data-theme="light"] .md-inline-code {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #1f1f1e;
+}
+
+[data-theme="light"] .md-blockquote {
+  background: rgba(0, 0, 0, 0.04);
+  border-left-color: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="light"] .chat-msg__bubble hr {
+  border-top-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .md-codeblock {
+  border-color: rgba(0, 0, 0, 0.13);
+  background: #f6f8fa;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.06),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.015);
+}
+[data-theme="light"] .md-codeblock__head {
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.04) 0%,
+    rgba(0, 0, 0, 0.02) 100%
+  );
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .md-codeblock__pre code {
+  color: #1f2328;
+}
+[data-theme="light"] .md-codeblock__foot {
+  background: rgba(0, 0, 0, 0.04);
+  border-top-color: rgba(0, 0, 0, 0.07);
+}
+/* highlight.js github-dark felülírás light-on - alap szövegszín */
+[data-theme="light"] .md-codeblock .hljs {
+  background: transparent !important;
+  color: #1f2328 !important;
+}
+[data-theme="light"] .md-codeblock .hljs-comment,
+[data-theme="light"] .md-codeblock .hljs-quote {
+  color: #6e7781 !important;
+}
+[data-theme="light"] .md-codeblock .hljs-keyword,
+[data-theme="light"] .md-codeblock .hljs-selector-tag,
+[data-theme="light"] .md-codeblock .hljs-literal {
+  color: #cf222e !important;
+}
+[data-theme="light"] .md-codeblock .hljs-string,
+[data-theme="light"] .md-codeblock .hljs-attr {
+  color: #0a3069 !important;
+}
+[data-theme="light"] .md-codeblock .hljs-number,
+[data-theme="light"] .md-codeblock .hljs-built_in {
+  color: #0550ae !important;
+}
+[data-theme="light"] .md-codeblock .hljs-title,
+[data-theme="light"] .md-codeblock .hljs-section,
+[data-theme="light"] .md-codeblock .hljs-name {
+  color: #8250df !important;
+}
+[data-theme="light"] .md-codeblock .hljs-tag {
+  color: #116329 !important;
+}
+[data-theme="light"] .md-codeblock .hljs-variable,
+[data-theme="light"] .md-codeblock .hljs-template-variable {
+  color: #953800 !important;
+}
+
+/* Copy gomb - light témán a feketére invertálás kell, nem a fehér */
+[data-theme="light"] .copy-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.13);
+  color: #3f3f46;
+}
+[data-theme="light"] .copy-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #18181b;
+  border-color: rgba(0, 0, 0, 0.2);
+}
+[data-theme="light"] .copy-btn__icon {
+  /* PNG eredetileg sötét → light témán nem kell invertálni */
+  filter: none;
+  opacity: 0.7;
+}
+[data-theme="light"] .copy-btn:hover .copy-btn__icon {
+  opacity: 1;
+}
+
+/* ============= TÁBLÁZATOK ============= */
+[data-theme="light"] .md-table th,
+[data-theme="light"] .md-table td {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+[data-theme="light"] .md-table th {
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .md-table tr:nth-child(even) td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* ============= GONDOLKODÁS PANEL ============= */
+[data-theme="light"] .chat-msg__thinking {
+  border-left-color: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.025);
+}
+
+/* ============= USER ÜZENET BUBBORÉK ============= */
+[data-theme="light"] .chat-msg--user .chat-msg__bubble {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+}
+
+/* ============= CHAT TITLE ELVÁLASZTÓ ============= */
+[data-theme="light"] .chat-view__title {
+  border-bottom-color: rgba(0, 0, 0, 0.07);
+}
+
+/* ============= AKASHA PILL (regi gold-pill) - most már nincs gold,
+   csak ellenőrzés végett a `bg-input` jó-e light témán ============= */
+
+/* ============= GENERATION INDICATOR (kék badge) ============= */
+[data-theme="light"] .gen-indicator {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.13);
+  color: #18181b;
+}
+
+/* ============= SIDEBAR AVATAR ============= */
+[data-theme="light"] .sidebar__avatar {
+  background: linear-gradient(135deg, #c4c4c4, #8a8a8a);
+  color: #fff;
+}
+
+/* ============= CODE BLOCK NYELV-PÖTTYE (gold dot) - most semleges ============= */
+[data-theme="light"] .md-codeblock__dot {
+  background: var(--accent-web, #2563eb);
+  box-shadow: 0 0 6px rgba(37, 99, 235, 0.4);
+}
+
+/* ============= COMPOSER (chatbox) ============= */
+[data-theme="light"] .chat-view__composer {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+/* Stop gomb piros megmarad */
+
+/* ============= GROUP SUBMENU / CONV MENU háttér ============= */
+[data-theme="light"] .sidebar__conv-menu,
+[data-theme="light"] .sidebar__conv-menu-groups {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.13);
+}
+[data-theme="light"] .sidebar__conv-menu button:hover,
+[data-theme="light"] .sidebar__conv-menu-groups button:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* ============= STREAMELŐ KURZOR ============= */
+[data-theme="light"] .chat-msg__caret {
+  background: var(--text-primary);
+}
+
+/* ============= MODAL (first-run, group-create, etc.) ============= */
+[data-theme="light"] .modal__panel,
+[data-theme="light"] .first-run-modal,
+[data-theme="light"] .avatar-crop-modal {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.13);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+/* ============= AVATAR CROP - fekete háttér helyett szürke ============= */
+[data-theme="light"] .avatar-crop-area {
+  background: #e7e7e5;
+}
+
+/* ============= TOAST - light témán enyhébb háttér ============= */
+[data-theme="light"] .toast {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+[data-theme="light"] .toast--success {
+  background: rgba(34, 197, 94, 0.12);
+}
+[data-theme="light"] .toast--info {
+  background: rgba(59, 130, 246, 0.12);
+}
+[data-theme="light"] .toast--error {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+/* ============= SLOT MENU háttér ============= */
+[data-theme="light"] .chat-view__slot-menu {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.13);
+}
+[data-theme="light"] .chat-view__slot-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+[data-theme="light"] .chat-view__slot-item.is-active {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* ============= PERF TIER kártyák Settings-ben ============= */
+[data-theme="light"] .perf-tier {
+  background: rgba(0, 0, 0, 0.025);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .perf-tier--pro {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+[data-theme="light"] .perf-tier--pro .perf-tier__dot {
+  background: #18181b;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+}
+[data-theme="light"] .perf-tier__meta {
+  border-top-color: rgba(0, 0, 0, 0.07);
+}
+[data-theme="light"] .perf-tier__rec {
+  border-top-color: rgba(0, 0, 0, 0.07);
+}
+
+/* ============= HW PILL light témán ============= */
+[data-theme="light"] .hw-pill {
+  background: #ffffff;
+}
+[data-theme="light"] .hw-pill--pro .hw-pill__dot {
+  background: #18181b;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+}
+
+/* ============= SLOT BUTTON manuális mode (volt aranyszínű) ============= */
+[data-theme="light"] .chat-view__slot-btn.is-manual {
+  border-color: #18181b;
+  color: #18181b;
+  background: rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .chat-view__slot-btn.is-manual:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* ============= SEND-PULSE GLOW light témán kicsit halványabb ============= */
+[data-theme="light"] .chat-view__composer-wrap.is-sending::before {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(37, 99, 235, 0.12) 0%,
+    rgba(37, 99, 235, 0) 70%
+  );
+}
+
+/* ============= ASSIGN MODAL ============= */
+[data-theme="light"] .assign-modal__list {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* ============= PROFILE STATS / HOUR CARDS ============= */
+[data-theme="light"] .profile-hour-card {
+  background: rgba(0, 0, 0, 0.025);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* ============= CHAT MSG COPY GOMB hover ============= */
+[data-theme="light"] .chat-msg__copy-wrap {
+  /* alapból semmi különös, csak a CopyBtn light overrideai elegek */
+}
+
+/* ============= PROFILE / AVATAR-CROP GOMBOK light témán =============
+   A dark változat fehér-overlay-eket használ háttérnek - light témán
+   ezek alig látszanak (fehér háttéren), hover-en pedig a primary szöveg
+   láthatatlanná válna. Ezek explicit light-mode-os színek. */
+[data-theme="light"] .profile-btn {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.13);
+  color: var(--text-primary);
+}
+[data-theme="light"] .profile-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.22);
+  color: var(--text-primary);
+}
+[data-theme="light"] .profile-btn--primary {
+  background: var(--accent-web, #2563eb);
+  border-color: var(--accent-web, #2563eb);
+  color: #ffffff;
+}
+[data-theme="light"] .profile-btn--primary:hover {
+  background: var(--accent-web-muted, #1e3a8a);
+  border-color: var(--accent-web-muted, #1e3a8a);
+  color: #ffffff;
+}
+[data-theme="light"] .profile-btn--danger {
+  background: rgba(239, 68, 68, 0.08);
+  color: #991b1b;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+[data-theme="light"] .profile-btn--danger:hover {
+  background: rgba(239, 68, 68, 0.16);
+  color: #7f1d1d;
+  border-color: rgba(239, 68, 68, 0.55);
+}
+
+/* ============= PROFILE BADGE ICON (sárga csillag) - fixen marad mert láthato ============= */
+
+/* ============= PERF BANNER (jobb felső kis pill) ============= */
+[data-theme="light"] .perf-banner {
+  border-color: rgba(0, 0, 0, 0.13);
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+[data-theme="light"] .perf-banner--pro {
+  border-color: rgba(0, 0, 0, 0.18);
+  background: #ffffff;
+  color: var(--text-primary);
+}
+[data-theme="light"] .perf-banner--standard {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(34, 197, 94, 0.12);
+  color: #166534;
+}
+[data-theme="light"] .perf-banner--limp {
+  border-color: rgba(234, 179, 8, 0.55);
+  background: rgba(254, 240, 138, 0.4);
+  color: #854d0e;
+}
+[data-theme="light"] .perf-banner--blocked {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(254, 226, 226, 0.55);
+  color: #991b1b;
+}
+[data-theme="light"] .perf-banner__close:hover {
+  background: rgba(0, 0, 0, 0.08);
+}

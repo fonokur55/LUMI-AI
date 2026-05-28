@@ -1,0 +1,111 @@
+.group-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.group-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.group-dialog__field > span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.group-dialog__field input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  outline: none;
+}
+.group-dialog__field input:focus {
+  border-color: var(--gold-muted);
+}
+
+.group-dialog__swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+}
+.group-dialog__swatch {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  transition: transform 0.1s, border-color 0.15s;
+}
+.group-dialog__swatch:hover {
+  transform: scale(1.08);
+}
+.group-dialog__swatch.is-active {
+  border-color: var(--text-primary);
+  transform: scale(1.08);
+}
+
+.group-dialog__icons {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+.group-dialog__icon {
+  aspect-ratio: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.group-dialog__icon:hover {
+  background: var(--bg-hover);
+  transform: scale(1.05);
+}
+.group-dialog__icon.is-active {
+  border-color: var(--text-primary);
+  background: var(--bg-active);
+}
+
+.group-dialog__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.group-dialog__btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  transition: background 0.15s, border-color 0.15s;
+}
+.group-dialog__btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+/* Primary CTA: brand kék (accent-web). Mindkét témán jól olvasható,
+   fehér szöveggel. Az arany szín régen volt itt, mostra már nincs. */
+.group-dialog__btn--primary {
+  background: var(--accent-web, #3b82f6);
+  color: #ffffff;
+  border-color: var(--accent-web, #3b82f6);
+  font-weight: 600;
+}
+.group-dialog__btn--primary:hover:not(:disabled) {
+  background: var(--accent-web-muted, #1d4ed8);
+  border-color: var(--accent-web-muted, #1d4ed8);
+}
+.group-dialog__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

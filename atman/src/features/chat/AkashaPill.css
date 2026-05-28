@@ -1,0 +1,91 @@
+.akasha-pill {
+  position: relative;
+  display: inline-flex;
+}
+
+.akasha-pill__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.akasha-pill__btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.akasha-pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.akasha-pill__label {
+  letter-spacing: 0.02em;
+}
+
+.akasha-pill__chev {
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+  transform: rotate(180deg);
+}
+.akasha-pill__chev.is-open {
+  transform: rotate(0deg);
+}
+
+.akasha-pill__popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  min-width: 280px;
+  padding: 12px;
+  background: var(--bg-popover);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.akasha-pill__popover-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.akasha-pill__popover-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  padding: 4px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.akasha-pill__popover-key {
+  color: var(--text-muted);
+}
+.akasha-pill__popover-val {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.akasha-pill__popover-foot {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+  line-height: 1.4;
+}

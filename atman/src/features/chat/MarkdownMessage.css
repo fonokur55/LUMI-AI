@@ -1,0 +1,298 @@
+/* ===== Inline elemek ===== */
+
+.chat-msg__bubble strong,
+.chat-msg__bubble b {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chat-msg__bubble em,
+.chat-msg__bubble i {
+  font-style: italic;
+}
+
+.chat-msg__bubble a {
+  color: var(--gold, #c9a227);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat-msg__bubble a:hover {
+  filter: brightness(1.15);
+}
+
+/* Inline kód: kis háttér + monospace betűkészlet */
+.md-inline-code {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code",
+    "Fira Code", Consolas, monospace;
+  font-size: 0.88em;
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===== Címsorok ===== */
+.md-h1,
+.md-h2,
+.md-h3 {
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.25;
+  margin: 0.9em 0 0.4em;
+}
+.md-h1 {
+  font-size: 1.25rem;
+}
+.md-h2 {
+  font-size: 1.1rem;
+}
+.md-h3 {
+  font-size: 1rem;
+}
+.chat-msg__bubble > .md-h1:first-child,
+.chat-msg__bubble > .md-h2:first-child,
+.chat-msg__bubble > .md-h3:first-child {
+  margin-top: 0;
+}
+
+/* ===== Bekezdések, listák ===== */
+.chat-msg__bubble p {
+  margin: 0 0 0.6em;
+}
+.chat-msg__bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.md-ul,
+.md-ol {
+  margin: 0.3em 0 0.7em;
+  padding-left: 1.4em;
+}
+.md-ul li,
+.md-ol li {
+  margin: 0.2em 0;
+}
+.md-ul li::marker {
+  color: var(--text-muted);
+}
+
+/* GFM task list checkbox-ai */
+.chat-msg__bubble input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: var(--gold, #c9a227);
+}
+
+/* ===== Idézet ===== */
+.md-blockquote {
+  margin: 0.5em 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--border-strong, #444);
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0 4px 4px 0;
+}
+.md-blockquote p {
+  margin: 0.2em 0;
+}
+
+/* ===== Vízszintes vonal ===== */
+.chat-msg__bubble hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle, #2a2a2a);
+  margin: 1em 0;
+}
+
+/* ===== Kód-blokk (multi-line, syntax-highlighted) =====
+   Erősen elkülönülő "kártya" megjelenés, hogy egyértelmű legyen:
+   ez kód, nem chat szöveg. Sötét háttér + erősebb keret + finom árnyék. */
+.md-codeblock {
+  position: relative;
+  margin: 12px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  /* Erősebb keret + finom árnyék = jól látható kártya */
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #15171c;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.015);
+  font-size: 0.85rem;
+}
+
+.md-codeblock__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px 6px 12px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.025) 100%
+  );
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.72rem;
+  font-family: ui-monospace, monospace;
+}
+
+.md-codeblock__lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+/* Kis színes pötty a nyelv-cimke mellett - apró vizuális jelzés
+   hogy ez egy "kód-kártya" fejléce */
+.md-codeblock__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold, #c9a227);
+  box-shadow: 0 0 6px rgba(201, 162, 39, 0.4);
+}
+
+.md-codeblock__pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  background: transparent;
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code",
+    "Fira Code", Consolas, monospace;
+  /* Szorosabb sorköz - kód sorai egymás alatt, kihagyás nélkül.
+     A modell néha üres sort tesz a blokkok közé; az most már nem
+     "lebeg" akkora hézaggal, hanem szorosan követi a környezetét. */
+  line-height: 1.3;
+}
+.md-codeblock__pre code {
+  background: transparent;
+  padding: 0;
+  border: 0;
+  font-size: inherit;
+  white-space: pre;
+  color: #e6edf3;
+}
+
+/* Alsó copy mindig látszik - finom elválasztó vonal + sötétebb sáv */
+.md-codeblock__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* =====================================================================
+   Egységes másolás-gomb stílus - kódkártya fejlécében (ikon-only) ÉS
+   alján (ikon + "Másolás" label), valamint az asszisztens üzenet alatt.
+   ===================================================================== */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  color: var(--text-secondary, #ccc);
+  font-family: inherit;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s,
+    transform 0.05s;
+}
+.copy-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.copy-btn:active {
+  transform: scale(0.95);
+}
+
+.copy-btn__icon {
+  display: block;
+  /* A copy.png sötét - `brightness(0)` mindent feketére rak (megtartva
+     a transzparenciát), majd `invert(1)` fehérre fordítja. Így bármilyen
+     színű ikonból garantáltan tiszta fehér lesz a sötét UI-hoz. */
+  filter: brightness(0) invert(1);
+  opacity: 0.85;
+}
+.copy-btn:hover .copy-btn__icon {
+  opacity: 1;
+}
+
+.copy-btn__label {
+  font-weight: 500;
+}
+
+/* Másolva állapot: zöld pipa, zöld keret pár pillanatig */
+.copy-btn.is-copied {
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(34, 197, 94, 0.08);
+}
+.copy-btn.is-copied:hover {
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.6);
+}
+.copy-btn__check {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+  /* Apró "pop" megjelenés animációval */
+  animation: copy-check-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes copy-check-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ===== Táblázatok (GFM) ===== */
+.md-table-wrap {
+  margin: 0.6em 0;
+  overflow-x: auto;
+}
+.md-table {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  min-width: 100%;
+}
+.md-table th,
+.md-table td {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 5px 10px;
+  text-align: left;
+}
+.md-table th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.md-table tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+/* ===== Stream alatti villogó kurzor a Markdown legutolsó eleme után ===== */
+/* (a chat-msg__caret már a ChatView.css-ben definiálva, de itt finomítjuk
+   hogy ne ugorjon le új sorra a md-blokkok után) */
+.chat-msg__bubble > *:last-child + .chat-msg__caret,
+.chat-msg__bubble > .chat-msg__caret {
+  vertical-align: text-bottom;
+}

@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+atman/node_modules/
+
+# Build outputs
+atman/dist/
+atman/src-tauri/target/
+
+# Runtime binaries (large - usereknek fetch-llama.ps1 szkript tölti le,
+# nem kell a repó-ba; a scripts/ benne marad).
+runtime/
+
+# Models (user / Hard Edition)
+models/**/*.gguf
+models/**/*.bin
+!models/**/.gitkeep
+
+# Portable user data (dev)
+data/
+atman/data/
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+*.swp
+
+# Design-források (PSD, nagy munkafájlok) - lokál-only, NE pusholjd.
+# A futtatható app-asseteket az atman/public/brand/ tartalmazza.
+things/
+
+# Fejlesztői debug-fájlok
+models-response.json
+debug-*.log
+
+# Env
+.env
+.env.*
+
+# Tauri
+atman/src-tauri/gen/

@@ -1,0 +1,246 @@
+.mem-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 70vh;
+}
+
+/* Intro szöveg a modal tetején - mindig látható a kártya-lista (vagy a
+   szerkesztő) felett. Balra rendezve, normál olvashatóság. A `<strong>`
+   tagek a kulcsfontosságú részeket emelik ki. */
+.mem-notes__intro {
+  margin: 0;
+  text-align: left;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+.mem-notes__intro strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ===== Kártyalista ===== */
+.mem-notes__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  max-height: 50vh;
+  padding-right: 2px;
+}
+
+.mem-notes__empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.mem-notes__card {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s, background 0.15s;
+  overflow: hidden;
+}
+.mem-notes__card:hover {
+  border-color: var(--border-strong);
+}
+.mem-notes__card.is-disabled {
+  opacity: 0.55;
+}
+
+.mem-notes__card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  text-align: left;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+}
+.mem-notes__card-body:hover {
+  background: var(--bg-hover);
+}
+.mem-notes__card-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.mem-notes__card-preview {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* CSS line-clamp helyett a kód `.slice(0, 160)` vágja a previewt */
+}
+
+.mem-notes__card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px 0 0;
+  flex-shrink: 0;
+}
+
+/* iOS-style toggle */
+.mem-notes__toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+}
+.mem-notes__toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.mem-notes__toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-active);
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  transition: background 0.18s, border-color 0.18s;
+}
+.mem-notes__toggle-slider::before {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--text-primary);
+  border-radius: 50%;
+  transition: left 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.mem-notes__toggle input:checked + .mem-notes__toggle-slider {
+  background: var(--accent-web, #3b82f6);
+  border-color: var(--accent-web, #3b82f6);
+}
+.mem-notes__toggle input:checked + .mem-notes__toggle-slider::before {
+  left: 18px;
+  background: #ffffff;
+}
+
+.mem-notes__delete {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.mem-notes__delete:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--accent-error, #ef4444);
+}
+
+/* ===== Editor ===== */
+.mem-notes__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mem-notes__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mem-notes__field > span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+.mem-notes__field input,
+.mem-notes__field textarea {
+  padding: 10px 12px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 0.92rem;
+  outline: none;
+  resize: vertical;
+  min-height: 40px;
+}
+.mem-notes__field textarea {
+  min-height: 180px;
+  line-height: 1.5;
+}
+.mem-notes__field input:focus,
+.mem-notes__field textarea:focus {
+  border-color: var(--accent-web, #3b82f6);
+}
+
+.mem-notes__editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ===== Gombok ===== */
+.mem-notes__btn {
+  padding: 8px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  transition: background 0.15s, border-color 0.15s;
+  cursor: pointer;
+}
+.mem-notes__btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.mem-notes__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mem-notes__btn--primary {
+  background: var(--accent-web, #3b82f6);
+  color: #ffffff;
+  border-color: var(--accent-web, #3b82f6);
+  font-weight: 600;
+}
+.mem-notes__btn--primary:hover:not(:disabled) {
+  background: var(--accent-web-muted, #1d4ed8);
+  border-color: var(--accent-web-muted, #1d4ed8);
+}
+
+.mem-notes__add {
+  align-self: stretch;
+}
+
+/* ===== Light theme finomítás ===== */
+[data-theme="light"] .mem-notes__toggle-slider {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.13);
+}
+[data-theme="light"] .mem-notes__toggle-slider::before {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}

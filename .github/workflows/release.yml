@@ -1,0 +1,131 @@
+name: Release
+
+# Tag-pusholásra fut (pl. `git tag v0.2.0 && git push --tags`).
+# Buildelünk Windows NSIS installert (auto-update-hez) ÉS portable ZIP-et
+# (manuális cseréhez). Mindkettő felkerül a GitHub Release-re a `latest.json`
+# manifesttel együtt, amit a Tauri-updater plugin olvas indításkor.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            atman/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('atman/src-tauri/Cargo.lock') }}
+
+      - name: Install npm deps
+        working-directory: atman
+        run: npm ci
+
+      - name: Build Tauri (NSIS installer + signed updater artifact)
+        working-directory: atman
+        env:
+          # A privát signing kulcsot a GitHub Secrets-ben tárolod
+          # (lásd docs/RELEASE.md - egyszer kell generálni).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --bundles nsis,updater
+
+      - name: Build portable ZIP
+        working-directory: atman
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $exe = "src-tauri/target/release/atman.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Bináris nem található: $exe"
+            exit 1
+          }
+          $stagingDir = "release-staging/LUMI-$version-portable"
+          New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
+          Copy-Item $exe -Destination "$stagingDir/atman.exe"
+          # A runtime mappát (llama-server bináris) ÉS a modelleket NEM
+          # csomagoljuk be ide - azokat a user a `scripts/fetch-*` szkriptekkel
+          # tölti le első indítás után. Ezzel pár száz MB-ot megspórolunk
+          # és a portable ZIP marad ~10 MB környékén.
+          # A `data/` mappa szándékosan üres / nem létezik a ZIP-ben - első
+          # indítás generálja a saját portable layout-ját.
+          $zipPath = "release-staging/LUMI-$version-windows-x64-portable.zip"
+          Compress-Archive -Path "$stagingDir/*" -DestinationPath $zipPath
+          Write-Output "Portable ZIP: $zipPath"
+
+      - name: Collect release artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-out | Out-Null
+          # NSIS installer + aláírt updater csomag + signature
+          Copy-Item "atman/src-tauri/target/release/bundle/nsis/*.exe" `
+            -Destination release-out -ErrorAction SilentlyContinue
+          Copy-Item "atman/src-tauri/target/release/bundle/nsis/*.nsis.zip" `
+            -Destination release-out -ErrorAction SilentlyContinue
+          Copy-Item "atman/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig" `
+            -Destination release-out -ErrorAction SilentlyContinue
+          # Portable ZIP
+          Copy-Item "atman/release-staging/*.zip" `
+            -Destination release-out -ErrorAction SilentlyContinue
+          Get-ChildItem release-out
+
+      - name: Generate latest.json
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $nsisZip = Get-ChildItem release-out -Filter "*_x64-setup.nsis.zip" | Select-Object -First 1
+          $sigFile = Get-ChildItem release-out -Filter "*_x64-setup.nsis.zip.sig" | Select-Object -First 1
+          if (-not $nsisZip -or -not $sigFile) {
+            Write-Error "NSIS updater csomag vagy aláírás hiányzik."
+            exit 1
+          }
+          $signature = (Get-Content $sigFile.FullName -Raw).Trim()
+          $repoUrl = "https://github.com/${{ github.repository }}"
+          $assetUrl = "$repoUrl/releases/download/${{ github.ref_name }}/$($nsisZip.Name)"
+          $manifest = @{
+            version = $version
+            notes = "LUMI $version - lásd a release leírást a részletekért."
+            pub_date = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $signature
+                url = $assetUrl
+              }
+            }
+          } | ConvertTo-Json -Depth 6
+          Set-Content -Path release-out/latest.json -Value $manifest -Encoding utf8
+          Write-Output "--- latest.json ---"
+          Get-Content release-out/latest.json
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-out/*.exe
+            release-out/*.nsis.zip
+            release-out/*.nsis.zip.sig
+            release-out/*-portable.zip
+            release-out/latest.json
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

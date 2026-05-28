@@ -1,0 +1,354 @@
+.profile-view {
+  padding: 24px 32px 40px;
+  max-width: 820px;
+  margin: 0 auto;
+  height: 100%;
+  overflow-y: auto;
+}
+.profile-view h1 {
+  margin: 0 0 18px;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ===== Általános kártya ===== */
+.profile-card {
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.profile-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.profile-hint {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* ===== Fejléc (avatar + név) ===== */
+.profile-header {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+}
+.profile-avatar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.profile-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-input);
+  border: 2px solid var(--border-strong);
+  display: block;
+}
+.profile-avatar--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.profile-avatar-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.profile-header__body {
+  flex: 1;
+  min-width: 0;
+}
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.profile-field > span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.profile-name-input {
+  padding: 8px 12px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 1.05rem;
+  font-family: inherit;
+  outline: none;
+}
+.profile-name-input:focus {
+  border-color: var(--text-primary);
+}
+.profile-name-input::placeholder {
+  color: var(--text-muted);
+}
+.profile-header__stats {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* ===== Gombok ===== */
+.profile-btn {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  transition: background 0.12s, border-color 0.12s;
+}
+.profile-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.profile-btn--small {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+}
+.profile-btn--primary {
+  background: var(--text-primary);
+  color: var(--bg-app);
+  border-color: var(--text-primary);
+}
+.profile-btn--primary:hover {
+  background: #ffffff;
+}
+.profile-btn--danger {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.profile-btn--danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+/* ===== Születésnap ===== */
+.profile-bday-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.profile-bday-row select {
+  padding: 8px 10px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+.profile-bday-summary {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ===== Órák grid ===== */
+.profile-hours-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.profile-hour-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.profile-hour-card__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.profile-hour-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.profile-hour-card__body strong {
+  font-size: 0.92rem;
+  color: var(--text-primary);
+}
+.profile-hour-card__sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.profile-hour-card__value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== Jelvények ===== */
+.profile-badges {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.profile-badge {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  opacity: 0.5;
+}
+.profile-badge:last-child {
+  border-bottom: none;
+}
+.profile-badge.is-unlocked {
+  opacity: 1;
+}
+.profile-badge.is-unlocked .profile-badge__icon {
+  color: #fbbf24;
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+}
+.profile-badge__icon {
+  font-size: 1.25rem;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+.profile-badge strong {
+  display: block;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+}
+.profile-badge p {
+  margin: 3px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* ===== Avatar crop modal ===== */
+.avatar-crop-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9500;
+  animation: avatar-crop-backdrop-in 0.18s ease-out;
+}
+@keyframes avatar-crop-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.avatar-crop-modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  max-width: 360px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  animation: avatar-crop-pop 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes avatar-crop-pop {
+  from { opacity: 0; transform: scale(0.92) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.avatar-crop-modal h3 {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+.avatar-crop-hint {
+  margin: 0 0 14px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.avatar-crop-area {
+  position: relative;
+  overflow: hidden;
+  background: #0d0d0d;
+  border-radius: var(--radius-sm);
+  margin: 0 auto 14px;
+  cursor: grab;
+  user-select: none;
+}
+.avatar-crop-area:active {
+  cursor: grabbing;
+}
+
+/* Rács overlay - 3×3 háló az igazításhoz */
+.avatar-crop-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+}
+.avatar-crop-grid div {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Kör-maszk overlay - jelzi hogy a végleges crop kör alakú */
+.avatar-crop-mask {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Belül átlátszó kör, kívül félig-átlátszó sötét overlay */
+  background:
+    radial-gradient(
+      circle at center,
+      transparent 0,
+      transparent 49.5%,
+      rgba(0, 0, 0, 0.55) 50%
+    );
+  border-radius: var(--radius-sm);
+}
+
+.avatar-crop-zoom {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 16px;
+}
+.avatar-crop-zoom span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.avatar-crop-zoom input[type="range"] {
+  accent-color: var(--accent-web, #3b82f6);
+}
+
+.avatar-crop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

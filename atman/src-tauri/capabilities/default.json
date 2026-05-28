@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "ATMAN main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
+    "dialog:default",
+    "core:window:allow-minimize",
+    "core:window:allow-close",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-start-dragging",
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

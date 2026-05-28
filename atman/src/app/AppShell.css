@@ -1,0 +1,739 @@
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
+.app-shell__titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--titlebar-height);
+  padding: 0 12px;
+  flex-shrink: 0;
+  gap: 8px;
+}
+.app-shell__titlebar-spacer {
+  flex: 1;
+}
+.app-shell__titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.app-shell__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* === SIDEBAR === */
+
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-sidebar);
+  display: flex;
+  flex-direction: column;
+  padding: 8px 8px 12px;
+  flex-shrink: 0;
+  transition: width 0.2s ease, margin 0.2s ease;
+  overflow: hidden;
+  /* Lekerekített külső sarkok: csak a jobb oldal (a bal a teljes ablak
+     széle, ne lóg ki kerekítés-bug). Felül és lent a sidebarnak van
+     8-12 px margója a titlebar és window-edge között, így a kerekítés
+     szellős. */
+  margin: 6px 0 6px 6px;
+  border-radius: var(--radius-lg);
+  /* A sidebar teljes magasság, csökkentve a margók miatt */
+  height: calc(100% - 12px);
+}
+
+.sidebar.is-closed {
+  width: 0;
+  padding: 0;
+  border: none;
+}
+
+.sidebar__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 12px;
+}
+
+.sidebar__brand {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+.sidebar__brand:hover {
+  background: var(--bg-hover);
+}
+/* A LUMI hosszú-logó képaránya kb. 3.65:1 (2480×680).
+   Magasság-vezérelt, a width auto-számolódik - így mindig
+   arányos és sosem torzul. A maxh kicsi, hogy elférjen a
+   sidebar 260px-es szélességébe. */
+.sidebar__brand-logo {
+  display: block;
+  height: 28px;
+  width: auto;
+  max-width: 200px;
+  object-fit: contain;
+}
+
+.sidebar__icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.65;
+  transition: opacity 0.15s, background 0.15s;
+}
+.sidebar__icon-btn:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+
+.sidebar__nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.sidebar__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar__item img {
+  opacity: 0.85;
+  object-fit: contain;
+}
+.sidebar__item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sidebar__item:hover img {
+  opacity: 1;
+}
+.sidebar__item.is-active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.sidebar__item--groups {
+  justify-content: flex-start;
+}
+.sidebar__chevron {
+  margin-left: auto;
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+  transform: rotate(180deg); /* alapból lefelé mutat */
+}
+.sidebar__chevron.is-open {
+  transform: rotate(0deg); /* lenyitva felfelé */
+}
+
+.sidebar__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 6px 28px;
+}
+.sidebar__groups-empty {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  padding: 6px 8px;
+}
+
+.sidebar__group-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-align: left;
+  width: 100%;
+}
+.sidebar__group-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sidebar__group-item.is-active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+.sidebar__group-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar__group-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sidebar__group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Csoport-sor: a csoport-szűrő gomb ÉS a hover-on megjelenő törlés gomb.
+   A row hover-jakor a kuka-ikon halványan láthatóvá válik. */
+.sidebar__group-row {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.sidebar__group-row .sidebar__group-item {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar__group-delete {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.12s, color 0.12s;
+  cursor: pointer;
+}
+.sidebar__group-row:hover .sidebar__group-delete,
+.sidebar__group-delete:focus-visible {
+  opacity: 1;
+}
+.sidebar__group-delete:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--accent-error, #ef4444);
+}
+
+.sidebar__group-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-align: left;
+  width: 100%;
+}
+.sidebar__group-create:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sidebar__group-create img {
+  opacity: 0.7;
+}
+
+.sidebar__section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding: 6px 10px 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+.sidebar__section-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.sidebar__section-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+.sidebar__section-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sidebar__search {
+  margin: 4px 6px 6px;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  outline: none;
+}
+.sidebar__search:focus {
+  border-color: var(--gold-muted);
+}
+
+.sidebar__convs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sidebar__convs-empty {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  padding: 6px 10px;
+}
+
+.sidebar__conv {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+.sidebar__conv:hover {
+  background: var(--bg-hover);
+}
+.sidebar__conv.is-active {
+  background: var(--bg-active);
+}
+.sidebar__conv.is-active .sidebar__conv-btn {
+  color: var(--text-primary);
+}
+
+.sidebar__conv-rename {
+  flex: 1;
+  margin: 4px;
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--gold-muted);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  outline: none;
+}
+.sidebar__conv-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  text-align: left;
+  min-width: 0;
+}
+.sidebar__conv:hover .sidebar__conv-btn {
+  color: var(--text-primary);
+}
+.sidebar__conv-pin {
+  color: var(--gold);
+  flex-shrink: 0;
+}
+.sidebar__conv-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar__conv-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 4px;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.sidebar__conv:hover .sidebar__conv-more,
+.sidebar__conv-more:focus-visible {
+  opacity: 1;
+}
+.sidebar__conv-more:hover {
+  background: var(--bg-active);
+}
+
+.sidebar__conv-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  /* Maximum a viewport magasság kb. fele - ha túl sok az item,
+     scrollozható lesz, nem csordul le a képernyő alá. */
+  max-height: min(60vh, 400px);
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-popover);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+.sidebar__conv-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  width: 100%;
+}
+.sidebar__conv-menu button:hover {
+  background: var(--bg-hover);
+}
+.sidebar__conv-menu button svg,
+.sidebar__conv-menu button img {
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.sidebar__conv-menu-danger {
+  color: var(--accent-error) !important;
+}
+
+.sidebar__conv-menu-sub {
+  position: relative;
+}
+.sidebar__conv-menu-chev {
+  margin-left: auto;
+  transform: rotate(-90deg);
+  opacity: 0.7;
+}
+
+.sidebar__conv-menu-groups {
+  position: absolute;
+  top: 0;
+  /* JOBBRA nyitjuk ki (a chat-mező irányába), nem balra. A sidebar
+     keskeny, balra nem fér el - emiatt lógott le a képernyőről eddig.
+     Jobbra van rengeteg hely. */
+  left: calc(100% + 4px);
+  min-width: 220px;
+  /* Max-height + scroll, hogy sok csoport esetén se csorduljon le. */
+  max-height: min(60vh, 380px);
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-popover);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+}
+.sidebar__conv-menu-groups button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  width: 100%;
+}
+.sidebar__conv-menu-groups button:hover {
+  background: var(--bg-hover);
+}
+.sidebar__conv-menu-empty {
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.sidebar__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 8px;
+}
+
+.sidebar__avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e5e5e5, #b0b0b0);
+  flex-shrink: 0;
+  /* Betű-placeholder (név első karaktere) */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--bg-app);
+  overflow: hidden;
+}
+/* Ha a user feltöltött avatart: kép-variáns - object-fit cover hogy
+   ne torzuljon, és a szülő-flex elnyeli a margin-okat. */
+.sidebar__avatar--img {
+  object-fit: cover;
+  display: block;
+}
+
+/* === MAIN === */
+
+.app-shell__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+  background: var(--bg-app);
+}
+
+/* Panel-váltás fade: a wrapper div újra-mountolódik a key változására,
+   és minden új mount-ra finoman bejön. */
+.app-shell__panel-fade {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  animation: panel-fade-in 0.22s ease-out;
+}
+@keyframes panel-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Kis függőleges rail a bal szélen, ha a sidebar zárva van.
+   A sidebar-toggle ikon ALATT még az "Új üzenet" ikon is itt áll
+   készenlétben, hogy a felhasználó egy kattintással új beszélgetést
+   indíthasson anélkül, hogy ki kéne nyitnia a sidebart. */
+.app-shell__rail {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: rail-fade 0.18s ease-out;
+}
+.app-shell__rail-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.65;
+  background: transparent;
+  transition: opacity 0.15s, background 0.15s;
+}
+.app-shell__rail-btn:hover {
+  opacity: 1;
+  background: var(--bg-hover);
+}
+@keyframes rail-fade {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 0.65; transform: translateX(0); }
+}
+
+/* =====================================================================
+   "Csoport választása" modal (chat → csoporthoz adás)
+   ===================================================================== */
+.assign-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.assign-modal__hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.assign-modal__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  /* Saját kis "doboz" a listának, hogy elkülönüljön a szövegtől */
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.15);
+}
+.assign-modal__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: background 0.1s, border-color 0.1s;
+}
+.assign-modal__item:hover {
+  background: var(--bg-hover);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+.assign-modal__item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assign-modal__item-check {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--gold, #c9a227);
+  flex-shrink: 0;
+}
+.assign-modal__empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* =====================================================================
+   Adaptív Védelmi Protokoll banner - chat ablak tetején
+   ===================================================================== */
+/* Tier-üzenet kis lekerekített kártyaként a jobb felső sarokban, az
+   X (close) gomb alatt. Float - nem foglal helyet a layoutban. */
+.perf-banner {
+  position: fixed;
+  top: calc(var(--titlebar-height, 36px) + 8px);
+  right: 12px;
+  z-index: 9000;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-elevated);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  animation: perf-banner-slide 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.perf-banner.is-exiting {
+  animation: perf-banner-out 0.2s ease-in forwards;
+}
+@keyframes perf-banner-slide {
+  from {
+    transform: translateY(-8px) scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+@keyframes perf-banner-out {
+  from {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-6px) scale(0.97);
+    opacity: 0;
+  }
+}
+.perf-banner--blocked {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+.perf-banner--limp {
+  border-color: rgba(255, 180, 60, 0.5);
+  background: rgba(255, 180, 60, 0.10);
+  color: #fde68a;
+}
+.perf-banner--standard {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.08);
+  color: #86efac;
+}
+.perf-banner--pro {
+  /* Pro: nem aranyszínű többé, hanem semleges fehér accent */
+  border-color: rgba(255, 255, 255, 0.18);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.perf-banner__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+.perf-banner--blocked .perf-banner__dot,
+.perf-banner--limp .perf-banner__dot {
+  animation: perf-banner-pulse 1.6s ease-in-out infinite;
+}
+@keyframes perf-banner-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; box-shadow: 0 0 8px currentColor; }
+}
+.perf-banner__text {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.perf-banner__close {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 1.05rem;
+  line-height: 1;
+  opacity: 0.5;
+  cursor: pointer;
+  transition: opacity 0.12s, background 0.12s;
+}
+.perf-banner__close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}

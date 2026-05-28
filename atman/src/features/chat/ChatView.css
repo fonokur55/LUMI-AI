@@ -1,0 +1,803 @@
+.chat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 24px 20px;
+  background: var(--bg-app);
+}
+
+/* Streaming-mascot: a composer (beviteli mező) jobb peremén "üldögél" -
+   a logó alja a perem vonalán, többi része kilóg fölé. A composer-wrap
+   `position: relative` adja a horgonyt.
+   Vízszintesen tükrözve, mert a forrás-PNG kifelé (jobbra) néz; mi
+   azt akarjuk, hogy befelé, a chat irányába (balra) nézzen. */
+.chat-view__mascot {
+  position: absolute;
+  /* A logó alja kb. a chatbox felső peremén legyen - a lába a peremen
+     ücsörög, többi része kilóg fölé. */
+  bottom: calc(100% - 2px);
+  right: 28px;
+  width: 56px;
+  height: auto;
+  max-height: 56px;
+  object-fit: contain;
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 3px 10px rgba(59, 130, 246, 0.18));
+  /* Befelé nézzen - a chat irányába (balra). Nincs fade-in vagy
+     scale-animáció; spontán meg- és eltűnik mint a gondolkodó ikonok. */
+  transform: scaleX(-1);
+}
+
+/* Welcome mode: a center-stage és a composer-wrap egy középre igazított
+   csoportként jelenik meg. A scroll-terület el van rejtve (hidden), a
+   két látható elem viszont vertikálisan középen helyezkedik el a chat-
+   view-ban. Amint érkezik az első üzenet, a class lekerül és a layout
+   visszavált normálra: scroll fent, composer alul. */
+.chat-view--welcome {
+  justify-content: center;
+  gap: 8px;
+}
+.chat-view__center-stage {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 0 16px;
+}
+
+.chat-view__title {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  padding: 6px 0 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-view__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 8px;
+  display: flex;
+  flex-direction: column;
+}
+/* HTML `hidden` attribútum erősebb kell legyen mint a fenti `display: flex` -
+   welcome módban ki kell venni a layoutból, hogy ne tátongjon a chat-view
+   közepén ürességként és pusholja le a composert. */
+.chat-view__scroll[hidden] {
+  display: none !important;
+}
+
+/* === Olvasási oszlop max-szélesség (full screen kontroll) ===
+   A chat-tartalom (üzenetek + welcome + élő stream-buborék) ne menjen
+   szét a teljes ablak-szélességig széles monitoron - 760px-en marad,
+   középre igazítva. Pont annyi, mint a composer-wrap → vizuálisan
+   egymás alá igazodnak. Keskeny ablakban a padding-margók veszik át
+   a kontrollt, tehát nincs vízszintes scroll, csak szépen összemegy. */
+.chat-view__welcome,
+.chat-view__scroll .chat-msg {
+  max-width: 760px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* A .chat-msg-nek volt `margin-bottom: 14px` a layout-hoz; auto-zás
+   miatt a shorthand kell hogy ne vesszen el. */
+.chat-view__scroll .chat-msg {
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+
+.chat-view__welcome {
+  margin: auto;
+  text-align: center;
+  padding-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Fő LUMI logó a welcome szöveg fölött - közepes méret. A logó max
+   140px magas, arányosan kicsinyítve a 3.65:1 aspect-tel. */
+.chat-view__welcome-logo {
+  width: auto;
+  height: auto;
+  max-height: 140px;
+  max-width: 300px;
+  object-fit: contain;
+  margin-bottom: 4px;
+  /* finom árnyék light és dark témán is jól mutat */
+  filter: drop-shadow(0 4px 16px rgba(59, 130, 246, 0.18));
+  /* Kattintható, de NEM jelezzük hover-rel - a felhasználó fedezi fel.
+     Default kurzor marad, nincs scale/glow átmenet hover-en. */
+  cursor: default;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* Kattintáskor 2× sima pattan. A `pop` keyframe egy spring-szerű
+   görbével le-fel jár, és a transform-origin a logó aljához tapad,
+   hogy a pattanás úgy nézzen ki mintha földön ülne. */
+.chat-view__welcome-logo.is-bouncing {
+  animation: logo-bounce 1.2s cubic-bezier(0.34, 1.6, 0.5, 1);
+  transform-origin: center bottom;
+}
+@keyframes logo-bounce {
+  /* 1. pattanás */
+  0%   { transform: translateY(0)     scaleY(1)    scaleX(1); }
+  10%  { transform: translateY(0)     scaleY(0.88) scaleX(1.08); }
+  30%  { transform: translateY(-28px) scaleY(1.06) scaleX(0.96); }
+  45%  { transform: translateY(0)     scaleY(0.92) scaleX(1.04); }
+  /* 2. pattanás (kicsit alacsonyabb) */
+  60%  { transform: translateY(-18px) scaleY(1.04) scaleX(0.98); }
+  78%  { transform: translateY(0)     scaleY(0.95) scaleX(1.02); }
+  90%  { transform: translateY(0)     scaleY(1.01) scaleX(0.995); }
+  100% { transform: translateY(0)     scaleY(1)    scaleX(1); }
+}
+
+.chat-view__welcome h1 {
+  font-size: 1.9rem;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--text-primary);
+}
+
+.chat-view__welcome-name {
+  color: var(--text-primary);
+}
+
+/* Szülinapi köszöntő - tiszta kék gradient (sötétebbtől világosabbra)
+   + finom kék glow halo. Lila/rózsa árnyalat eltávolítva. */
+.chat-view__welcome-bday {
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 55%, #93c5fd 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* Glow - text-shadow nem látszik átlátszó szövegen, ezért egy
+     drop-shadow filterrel adunk halo-t */
+  filter: drop-shadow(0 0 18px rgba(59, 130, 246, 0.45));
+  animation: bday-shimmer 3s ease-in-out infinite;
+}
+@keyframes bday-shimmer {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.18); }
+}
+
+.chat-view__welcome p {
+  color: var(--text-muted);
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.chat-msg {
+  display: flex;
+  margin-bottom: 14px;
+}
+
+.chat-msg--user {
+  justify-content: flex-end;
+}
+
+.chat-msg--assistant {
+  justify-content: flex-start;
+}
+
+.chat-msg__bubble {
+  max-width: 75%;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  font-size: 0.95rem;
+  word-wrap: break-word;
+}
+
+.chat-msg--user .chat-msg__bubble {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.chat-msg--assistant .chat-msg__bubble {
+  background: transparent;
+  color: var(--text-primary);
+  padding-left: 4px;
+  padding-right: 4px;
+  max-width: 100%;
+}
+
+/* Az asszisztens üzenetek alatti "Másolás" gomb wrapper.
+   Alapból láthatatlan (opacity 0), csak az adott üzenet fölé húzva
+   az egeret jelenik meg - vagy ha sikerült másolni, a "Másolva ✓"
+   visszajelzés idejéig láthatóan marad. */
+.chat-msg--assistant {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.chat-msg__copy-wrap {
+  margin-top: 6px;
+  margin-left: 4px;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+.chat-msg--assistant:hover .chat-msg__copy-wrap,
+.chat-msg__copy-wrap:focus-within {
+  opacity: 1;
+}
+/* Ha sikeres másolás visszajelzés van folyamatban (is-copied class),
+   maradjon látható is hoverezés nélkül. */
+.chat-msg__copy-wrap:has(.copy-btn.is-copied) {
+  opacity: 1;
+}
+
+/* Gondolkodás-panel (reasoning-modellek chain-of-thought-ja).
+   Halvány, becsukható, vizuálisan elválasztva a valódi választól. */
+.chat-msg__thinking {
+  margin-bottom: 10px;
+  padding: 6px 12px;
+  border-left: 2px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  max-width: 100%;
+}
+.chat-msg__thinking-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-weight: 500;
+  color: var(--text-secondary, var(--text-muted));
+  outline: none;
+}
+.chat-msg__thinking-summary::-webkit-details-marker {
+  display: none;
+}
+.chat-msg__thinking-summary::before {
+  content: "▸";
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.chat-msg__thinking[open] > .chat-msg__thinking-summary::before {
+  transform: rotate(90deg);
+}
+.chat-msg__thinking-icon {
+  color: var(--gold, #c9a227);
+  font-size: 0.85rem;
+}
+.chat-msg__thinking-body {
+  margin-top: 6px;
+  padding: 6px 0 2px;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  color: var(--text-muted);
+  font-style: italic;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.chat-msg__thinking-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+}
+.chat-msg__thinking-dots span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
+  animation: thinking-dot 1.2s ease-in-out infinite;
+}
+.chat-msg__thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.chat-msg__thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes thinking-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Villogó "typing" kurzor a streamelt asszisztens válasz végén -
+   azonnal megjelenik, hogy a user lássa: AKASHA dolgozik.  */
+.chat-msg__caret {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--text-primary);
+  border-radius: 1px;
+  animation: chat-caret-blink 1s steps(1) infinite;
+}
+
+@keyframes chat-caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Thinking-ikon a buborékban a caret helyén - amíg AKASHA gondolkodik
+   (még nincs első token) a gondol1/2 ikon váltakozik ott, ahol egyébként
+   a typing kurzor villogna. KEMÉNY váltás - nincs fade vagy scale, csak
+   azonnali frame-csere másodpercenként. */
+.thinking-icon {
+  display: inline-block;
+  object-fit: contain;
+  vertical-align: text-bottom;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.chat-msg__thinking-img {
+  margin-left: 2px;
+}
+
+.chat-view__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 auto 10px;
+  max-width: 760px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent-error);
+  font-size: 0.85rem;
+}
+.chat-view__error-close {
+  color: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 6px;
+}
+
+.chat-view__composer-wrap {
+  flex-shrink: 0;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* Apró figyelmeztető szöveg a chatbox alatt - "ne bízz bennem vakon"
+   stílusú disclaimer. Light témán fekete, sötét témán halvány szürke
+   (a fekete olvashatatlan lenne sötét háttéren). */
+.chat-view__disclaimer {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: #000;
+  opacity: 0.65;
+  user-select: none;
+}
+html:not([data-theme="light"]) .chat-view__disclaimer {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* Küldés-animáció: 1.5 mp-es kék "tengeri hullám" effekt a composer
+   körül. Két réteg: (1) belső kék glow halo, (2) egy gradient sweep
+   amely balról jobbra végigfut a composer mögött. Mindkettő rövid, hogy
+   ne zavarja az olvasást. */
+.chat-view__composer-wrap.is-sending::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: calc(var(--radius-xl) + 4px);
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(59, 130, 246, 0.18) 0%,
+    rgba(59, 130, 246, 0) 70%
+  );
+  animation: send-glow 1.5s ease-out forwards;
+  z-index: 0;
+}
+.chat-view__composer-wrap.is-sending .chat-view__composer {
+  position: relative;
+  overflow: hidden;
+}
+.chat-view__composer-wrap.is-sending .chat-view__composer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 60%;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(96, 165, 250, 0.0) 20%,
+    rgba(96, 165, 250, 0.22) 50%,
+    rgba(96, 165, 250, 0.0) 80%,
+    transparent 100%
+  );
+  animation: send-sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  z-index: 0;
+}
+.chat-view__composer-wrap.is-sending .chat-view__composer > * {
+  /* tartalom legyen a sweep felett */
+  position: relative;
+  z-index: 1;
+}
+@keyframes send-glow {
+  0% { opacity: 0; transform: scale(0.95); }
+  30% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.02); }
+}
+@keyframes send-sweep {
+  0% { left: -60%; }
+  100% { left: 100%; }
+}
+
+.chat-view__composer {
+  display: flex;
+  flex-direction: column;
+  /* A box LÁTSZIK (lekerekített, világosabb háttér), hogy egyértelmű
+     legyen hol kell írni. NINCS azonban border vagy focus-outline - írás
+     közben semmilyen "kocka-ugrik-elő" effekt nem történik. */
+  background: var(--bg-input);
+  border-radius: var(--radius-xl);
+  padding: 8px 8px 8px 16px;
+}
+
+.chat-view__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 8px;
+}
+
+.chat-view__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  max-width: 240px;
+}
+.chat-view__chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-view__chip-remove {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+}
+.chat-view__chip-remove:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-view__input {
+  background: transparent;
+  border: none;
+  resize: none;
+  outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  min-height: 28px;
+  max-height: 200px;
+  padding: 6px 4px;
+  font-family: inherit;
+}
+/* Belt-and-suspenders: webview néha újra-rajzol focus outline-t. Minden
+   állapotban explicit kinullázzuk, hogy semmi "kocka" ne jelenjen meg
+   amikor a user beleíkattint a mezőbe. */
+.chat-view__input:focus,
+.chat-view__input:focus-visible,
+.chat-view__input:active {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.chat-view__input::placeholder {
+  color: var(--text-muted);
+}
+
+.chat-view__composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 2px;
+}
+
+.chat-view__attach,
+.chat-view__send {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+}
+
+.chat-view__attach {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+.chat-view__attach:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Globe (internet keresés) gomb - az attach mellett.
+   Toggle: kikapcsolva halvány szürke, bekapcsolva aranyszínű háttér +
+   pulzáló izzás (jelezve "kifelé megy net-forgalom" - a privacy
+   szempontjából fontos vizuális jel). */
+.chat-view__web {
+  width: 34px;
+  height: 34px;
+  margin-left: 8px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s,
+    box-shadow 0.2s;
+}
+.chat-view__web:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.chat-view__web.is-active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: var(--accent-web, #3b82f6);
+  color: var(--accent-web, #3b82f6);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35),
+    0 0 12px rgba(59, 130, 246, 0.35);
+  animation: web-active-pulse 2.4s ease-in-out infinite;
+}
+.chat-view__web.is-active:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.22);
+  color: #60a5fa;
+}
+@keyframes web-active-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35),
+      0 0 8px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.5),
+      0 0 16px rgba(59, 130, 246, 0.5);
+  }
+}
+
+/* Tölti ki a helyet a slot-választó és a send gomb közt */
+.chat-view__composer-spacer {
+  flex: 1;
+}
+
+/* =====================================================================
+   AKASHA slot-választó (AUTO / Eco / Brain / Creative)
+   ===================================================================== */
+.chat-view__slot {
+  position: relative;
+  margin-left: 8px;
+}
+
+.chat-view__slot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px 0 8px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill, 17px);
+  color: var(--text-secondary, #ccc);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.chat-view__slot-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.chat-view__slot-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Manuálisan rögzítve: enyhén világosabb szürke háttér + halvány keret,
+   jelzi a felhasználónak hogy felülbírálta a routert (de nem aranyozott
+   ami a régi brand-szín volt). */
+.chat-view__slot-btn.is-manual {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+.chat-view__slot-btn.is-manual:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-view__slot-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.chat-view__slot-chev {
+  transition: transform 0.15s;
+  opacity: 0.7;
+}
+.chat-view__slot-chev.is-open {
+  transform: rotate(180deg);
+}
+
+/* Dropdown menü a gomb fölött (mert a composer alul van) */
+.chat-view__slot-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  padding: 4px;
+  background: var(--bg-elevated, #1c1d22);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chat-view__slot-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "title check"
+    "desc check";
+  align-items: center;
+  gap: 0 8px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+.chat-view__slot-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.chat-view__slot-item.is-active {
+  /* Aktív item: enyhe világos overlay (nem arany), hogy semleges szürke
+     kiemelést kapjon - a brand-paletta már nem aranyos. */
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.chat-view__slot-item-title {
+  grid-area: title;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.chat-view__slot-item-desc {
+  grid-area: desc;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.chat-view__slot-item-check {
+  grid-area: check;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* Web-status pill - a generation indicator FÖLÖTT jelenik meg amíg a
+   keresés fut, vagy 3 mp-ig a találatok érkezése után. */
+.chat-view__web-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 14px;
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+  color: var(--accent-web, #3b82f6);
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: var(--radius-pill);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-view__send {
+  background: var(--text-primary);
+  color: var(--bg-app);
+}
+.chat-view__send:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.chat-view__send:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.chat-view__send img {
+  filter: invert(1);
+}
+
+/* Stop gomb generálás közben - a Küldés helyén,
+   piros stop-négyzet ikonnal. */
+.chat-view__send--stop {
+  background: var(--accent-error, #ef4444);
+  color: #fff;
+  opacity: 1;
+  cursor: pointer;
+}
+.chat-view__send--stop:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+.chat-view__stop-square {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  background: currentColor;
+  border-radius: 2px;
+}
+
+.chat-view__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding-left: 4px;
+}

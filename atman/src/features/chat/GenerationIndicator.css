@@ -1,0 +1,63 @@
+.gen-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  color: var(--gold);
+  border: 1px solid var(--gold-muted);
+  border-radius: var(--radius-pill);
+  background: rgba(201, 162, 39, 0.06);
+}
+
+.gen-indicator--slow {
+  border-color: var(--accent-warning);
+  color: var(--accent-warning);
+}
+
+.gen-indicator__pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: gen-pulse 1.2s ease-in-out infinite;
+}
+
+
+.gen-indicator--slow .gen-indicator__pulse {
+  background: var(--accent-warning);
+}
+
+.gen-indicator__dim {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.gen-indicator__time {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.gen-indicator__badge {
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  background: rgba(255, 180, 60, 0.12);
+  color: var(--accent-warning);
+}
+
+@keyframes gen-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
