@@ -1,9 +1,12 @@
 name: Release
 
-# Tag-pusholásra fut (pl. `git tag v0.2.0 && git push --tags`).
-# Buildelünk Windows NSIS installert (auto-update-hez) ÉS portable ZIP-et
-# (manuális cseréhez). Mindkettő felkerül a GitHub Release-re a `latest.json`
-# manifesttel együtt, amit a Tauri-updater plugin olvas indításkor.
+# Tag-pusholásra fut (pl. `git tag v0.1.0 && git push --tags`).
+# Mátrix-szal mind a 3 OS-en (Windows, macOS, Linux) build-el, majd egy
+# közös `release` job összerakja a draft release-t a GitHub-on.
+#
+# A DRAFT státusz miatt csak a repo-admin (Áron) látja a fájlokat —
+# tesztelőknek manuálisan tovább lehet küldeni, vagy "Publish release"
+# kattintással nyilvánossá tenni.
 on:
   push:
     tags:
@@ -14,9 +17,23 @@ permissions:
   contents: write
 
 jobs:
+  # =======================================================================
+  #  PER-OS BUILD - mindegyik runner-en a saját bundle-jeit készíti
+  # =======================================================================
   build:
-    name: Build (Windows)
-    runs-on: windows-latest
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-22.04
+            platform: linux
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +44,21 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      # Linux-specifikus rendszer-csomagok a Tauri-build-hez (WebKit + GTK).
+      - name: Install Linux deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            libssl-dev
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -37,127 +69,223 @@ jobs:
             atman/src-tauri/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('atman/src-tauri/Cargo.lock') }}
 
-      - name: Install npm deps
+      - name: Install atman npm deps
         working-directory: atman
         run: npm ci
 
-      - name: Build Tauri (NSIS installer + signed updater artifact)
+      # === Atman build - OS-specifikus bundle-targetek ===
+      - name: Build atman (Windows)
+        if: matrix.platform == 'windows'
         working-directory: atman
         env:
-          # A privát signing kulcsot a GitHub Secrets-ben tárolod
-          # (lásd docs/RELEASE.md - egyszer kell generálni).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build -- --bundles nsis,updater
 
-      - name: Build portable ZIP
+      - name: Build atman (macOS universal)
+        if: matrix.platform == 'macos'
+        working-directory: atman
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --target universal-apple-darwin --bundles dmg,updater
+
+      - name: Build atman (Linux)
+        if: matrix.platform == 'linux'
+        working-directory: atman
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --bundles deb,rpm,appimage,updater
+
+      # === Portable archív - a runtime/llama-server-t NEM tartalmazza,
+      #     azt a scripts/fetch-llama.* tölti le első indításra. ===
+      - name: Build portable ZIP (Windows)
+        if: matrix.platform == 'windows'
         working-directory: atman
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          $exe = "src-tauri/target/release/atman.exe"
-          if (-not (Test-Path $exe)) {
-            Write-Error "Bináris nem található: $exe"
-            exit 1
-          }
-          $stagingDir = "release-staging/LUMI-$version-portable"
-          New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
-          Copy-Item $exe -Destination "$stagingDir/atman.exe"
-          # A runtime mappát (llama-server bináris) ÉS a modelleket NEM
-          # csomagoljuk be ide - azokat a user a `scripts/fetch-*` szkriptekkel
-          # tölti le első indítás után. Ezzel pár száz MB-ot megspórolunk
-          # és a portable ZIP marad ~10 MB környékén.
-          # A `data/` mappa szándékosan üres / nem létezik a ZIP-ben - első
-          # indítás generálja a saját portable layout-ját.
-          $zipPath = "release-staging/LUMI-$version-windows-x64-portable.zip"
-          Compress-Archive -Path "$stagingDir/*" -DestinationPath $zipPath
-          Write-Output "Portable ZIP: $zipPath"
+          $stage = "release-staging/LUMI-$version-portable"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "src-tauri/target/release/atman.exe" -Destination "$stage/atman.exe"
+          Compress-Archive -Path "$stage/*" `
+            -DestinationPath "release-staging/LUMI-$version-windows-x64-portable.zip"
 
-      - name: Embed portable ZIP into USB Installer
+      - name: Build portable tar.gz (macOS)
+        if: matrix.platform == 'macos'
+        working-directory: atman
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          stage="release-staging/LUMI-$version-portable"
+          mkdir -p "$stage"
+          cp -R "src-tauri/target/universal-apple-darwin/release/bundle/macos/LUMI.app" "$stage/"
+          (cd release-staging && tar -czf "LUMI-$version-macos-universal-portable.tar.gz" "LUMI-$version-portable")
+
+      - name: Build portable tar.gz (Linux)
+        if: matrix.platform == 'linux'
+        working-directory: atman
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          stage="release-staging/LUMI-$version-portable"
+          mkdir -p "$stage"
+          # Az AppImage egyetlen futtatható fájl - ez a Linuxos "portable"
+          appimage=$(ls src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1)
+          if [ -n "$appimage" ]; then
+            cp "$appimage" "$stage/LUMI.AppImage"
+            chmod +x "$stage/LUMI.AppImage"
+          else
+            cp "src-tauri/target/release/atman" "$stage/"
+          fi
+          (cd release-staging && tar -czf "LUMI-$version-linux-x64-portable.tar.gz" "LUMI-$version-portable")
+
+      # === USB Installer - csak Windows-ra értelmes (drive-detektálás
+      #     Win32 API-val); Linux/macOS-en a portable archívot a user
+      #     egyszerűen kibontja a céllemezre. ===
+      - name: Embed Windows portable ZIP into USB Installer
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          $src = "atman/release-staging/LUMI-$version-windows-x64-portable.zip"
-          $dst = "lumi-usb-installer/src-tauri/embedded/lumi-portable.zip"
-          if (-not (Test-Path $src)) {
-            Write-Error "Portable ZIP nem található: $src"
-            exit 1
-          }
-          Copy-Item $src -Destination $dst -Force
-          Write-Output "Beágyazva: $dst ($((Get-Item $dst).Length) byte)"
+          Copy-Item "atman/release-staging/LUMI-$version-windows-x64-portable.zip" `
+            -Destination "lumi-usb-installer/src-tauri/embedded/lumi-portable.zip" -Force
 
       - name: Install USB Installer npm deps
+        if: matrix.platform == 'windows'
         working-directory: lumi-usb-installer
         run: npm install
 
-      - name: Build USB Installer (NSIS)
+      - name: Build USB Installer (Windows)
+        if: matrix.platform == 'windows'
         working-directory: lumi-usb-installer
         run: npm run tauri build -- --bundles nsis
 
-      - name: Collect release artifacts
-        shell: pwsh
+      # === Artifaktok összegyűjtése ===
+      - name: Collect artifacts
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Force -Path release-out | Out-Null
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          # === Asztali NSIS installer + aláírt updater csomag ===
-          Copy-Item "atman/src-tauri/target/release/bundle/nsis/*.exe" `
-            -Destination release-out -ErrorAction SilentlyContinue
-          Copy-Item "atman/src-tauri/target/release/bundle/nsis/*.nsis.zip" `
-            -Destination release-out -ErrorAction SilentlyContinue
-          Copy-Item "atman/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig" `
-            -Destination release-out -ErrorAction SilentlyContinue
-          # === Portable ZIP ===
-          Copy-Item "atman/release-staging/*.zip" `
-            -Destination release-out -ErrorAction SilentlyContinue
-          # === USB Installer ===
-          # Rename-eljük "LUMI-USB-Installer-x.y.z.exe"-re a jobb felismerhetőség kedvéért
-          $usbExe = Get-ChildItem `
-            "lumi-usb-installer/src-tauri/target/release/bundle/nsis/*.exe" `
-            | Select-Object -First 1
-          if ($usbExe) {
-            Copy-Item $usbExe.FullName `
-              -Destination "release-out/LUMI-USB-Installer-$version.exe"
-          }
-          Get-ChildItem release-out
+          mkdir -p release-out
+          version="${GITHUB_REF_NAME#v}"
 
-      - name: Generate latest.json
-        shell: pwsh
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            cp atman/src-tauri/target/release/bundle/nsis/*.exe release-out/ 2>/dev/null || true
+            cp atman/src-tauri/target/release/bundle/nsis/*.nsis.zip release-out/ 2>/dev/null || true
+            cp atman/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig release-out/ 2>/dev/null || true
+            cp atman/release-staging/*.zip release-out/ 2>/dev/null || true
+            usb=$(ls lumi-usb-installer/src-tauri/target/release/bundle/nsis/*.exe 2>/dev/null | head -1)
+            if [ -n "$usb" ]; then
+              cp "$usb" "release-out/LUMI-USB-Installer-$version.exe"
+            fi
+          fi
+
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            cp atman/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg release-out/ 2>/dev/null || true
+            cp atman/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz release-out/ 2>/dev/null || true
+            cp atman/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig release-out/ 2>/dev/null || true
+            cp atman/release-staging/*.tar.gz release-out/ 2>/dev/null || true
+          fi
+
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            cp atman/src-tauri/target/release/bundle/deb/*.deb release-out/ 2>/dev/null || true
+            cp atman/src-tauri/target/release/bundle/rpm/*.rpm release-out/ 2>/dev/null || true
+            cp atman/src-tauri/target/release/bundle/appimage/*.AppImage release-out/ 2>/dev/null || true
+            cp atman/src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz release-out/ 2>/dev/null || true
+            cp atman/src-tauri/target/release/bundle/appimage/*.AppImage.tar.gz.sig release-out/ 2>/dev/null || true
+            cp atman/release-staging/*.tar.gz release-out/ 2>/dev/null || true
+          fi
+
+          ls -la release-out/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumi-${{ matrix.platform }}
+          path: release-out/
+          if-no-files-found: error
+
+  # =======================================================================
+  #  RELEASE - összerakja a draft release-t az összes platform artifaktból
+  # =======================================================================
+  release:
+    name: Create Draft Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten + show files
         run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          $nsisZip = Get-ChildItem release-out -Filter "*_x64-setup.nsis.zip" | Select-Object -First 1
-          $sigFile = Get-ChildItem release-out -Filter "*_x64-setup.nsis.zip.sig" | Select-Object -First 1
-          if (-not $nsisZip -or -not $sigFile) {
-            Write-Error "NSIS updater csomag vagy aláírás hiányzik."
-            exit 1
-          }
-          $signature = (Get-Content $sigFile.FullName -Raw).Trim()
-          $repoUrl = "https://github.com/${{ github.repository }}"
-          $assetUrl = "$repoUrl/releases/download/${{ github.ref_name }}/$($nsisZip.Name)"
-          $manifest = @{
-            version = $version
-            notes = "LUMI $version - lásd a release leírást a részletekért."
-            pub_date = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
-            platforms = @{
-              "windows-x86_64" = @{
-                signature = $signature
-                url = $assetUrl
-              }
-            }
-          } | ConvertTo-Json -Depth 6
-          Set-Content -Path release-out/latest.json -Value $manifest -Encoding utf8
-          Write-Output "--- latest.json ---"
-          Get-Content release-out/latest.json
+          mkdir -p release-final
+          find artifacts -type f -exec cp {} release-final/ \;
+          ls -la release-final/
 
-      - name: Create / update GitHub Release
+      - name: Generate latest.json (multi-platform)
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          repo_url="https://github.com/${{ github.repository }}"
+
+          # Per-platform sig + URL kiszedése
+          declare -A platforms
+
+          # Windows
+          win_zip=$(ls release-final/*_x64-setup.nsis.zip 2>/dev/null | grep -v sig | head -1)
+          win_sig=$(ls release-final/*_x64-setup.nsis.zip.sig 2>/dev/null | head -1)
+          if [ -n "$win_zip" ] && [ -n "$win_sig" ]; then
+            platforms[windows-x86_64]="$(cat "$win_sig" | tr -d '\n')|${repo_url}/releases/download/${GITHUB_REF_NAME}/$(basename "$win_zip")"
+          fi
+
+          # macOS - universal binary; mind aarch64 és x86_64 ugyanazt használja
+          mac_zip=$(ls release-final/*.app.tar.gz 2>/dev/null | grep -v sig | head -1)
+          mac_sig=$(ls release-final/*.app.tar.gz.sig 2>/dev/null | head -1)
+          if [ -n "$mac_zip" ] && [ -n "$mac_sig" ]; then
+            mac_data="$(cat "$mac_sig" | tr -d '\n')|${repo_url}/releases/download/${GITHUB_REF_NAME}/$(basename "$mac_zip")"
+            platforms[darwin-aarch64]="$mac_data"
+            platforms[darwin-x86_64]="$mac_data"
+          fi
+
+          # Linux
+          lin_zip=$(ls release-final/*.AppImage.tar.gz 2>/dev/null | grep -v sig | head -1)
+          lin_sig=$(ls release-final/*.AppImage.tar.gz.sig 2>/dev/null | head -1)
+          if [ -n "$lin_zip" ] && [ -n "$lin_sig" ]; then
+            platforms[linux-x86_64]="$(cat "$lin_sig" | tr -d '\n')|${repo_url}/releases/download/${GITHUB_REF_NAME}/$(basename "$lin_zip")"
+          fi
+
+          # JSON felépítés
+          {
+            echo "{"
+            echo "  \"version\": \"$version\","
+            echo "  \"notes\": \"LUMI $version\","
+            echo "  \"pub_date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+            echo "  \"platforms\": {"
+            first=true
+            for key in "${!platforms[@]}"; do
+              IFS='|' read -r sig url <<< "${platforms[$key]}"
+              [ "$first" = "true" ] || echo ","
+              echo -n "    \"$key\": { \"signature\": \"$sig\", \"url\": \"$url\" }"
+              first=false
+            done
+            echo ""
+            echo "  }"
+            echo "}"
+          } > release-final/latest.json
+
+          echo "--- latest.json ---"
+          cat release-final/latest.json
+
+      - name: Create draft release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-out/*.exe
-            release-out/*.nsis.zip
-            release-out/*.nsis.zip.sig
-            release-out/*-portable.zip
-            release-out/LUMI-USB-Installer-*.exe
-            release-out/latest.json
+          files: release-final/*
           generate_release_notes: true
+          # DRAFT: csak az admin (Áron) látja a Releases oldalon. A
+          # "Publish release" gomb teszi nyilvánossá amikor készen áll.
+          # Amíg draft, az auto-update flow NEM jut el a felhasználókhoz.
+          draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
