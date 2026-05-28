@@ -88,10 +88,19 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        # Az `app` bundle KELL explicit, hogy a `.app` mappa megmaradjon a
-        # `bundle/macos/`-ban (a portable tar.gz csomagoláshoz). Egyébként
-        # a Tauri csak a DMG-be ágyazza és törli külön a `.app`-ot.
         run: npm run tauri build -- --target universal-apple-darwin --bundles app,dmg,updater
+
+      # Debug: lássuk hova tette a Tauri a macOS bundle-okat. A `.app`
+      # néha a `bundle/macos/` máshol terem (productName-tól és Tauri
+      # verziótól függően) - innen tudjuk pontosan a path-t.
+      - name: Debug list macOS bundle dir
+        if: matrix.platform == 'macos'
+        working-directory: atman
+        run: |
+          echo "=== universal-apple-darwin bundle tree ==="
+          find src-tauri/target/universal-apple-darwin/release/bundle -maxdepth 3 -print 2>/dev/null || true
+          echo "=== generic release bundle (fallback) ==="
+          find src-tauri/target/release/bundle -maxdepth 3 -print 2>/dev/null || true
 
       - name: Build atman (Linux)
         if: matrix.platform == 'linux'
@@ -122,7 +131,16 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           stage="release-staging/LUMI-$version-portable"
           mkdir -p "$stage"
-          cp -R "src-tauri/target/universal-apple-darwin/release/bundle/macos/LUMI.app" "$stage/"
+          # A `.app` bundle keresése - lehet a `bundle/macos/`-ban vagy
+          # a `bundle/app/`-ben, Tauri verziótól függően. `find`-del
+          # mindkettőt lefedjük.
+          appPath=$(find src-tauri/target -maxdepth 6 -name "*.app" -type d -print 2>/dev/null | head -1)
+          if [ -z "$appPath" ]; then
+            echo "::warning::Nem található .app bundle - portable tar.gz kihagyva (a DMG akkor is OK)."
+            exit 0
+          fi
+          echo "Megtalált .app: $appPath"
+          cp -R "$appPath" "$stage/"
           (cd release-staging && tar -czf "LUMI-$version-macos-universal-portable.tar.gz" "LUMI-$version-portable")
 
       - name: Build portable tar.gz (Linux)
@@ -182,9 +200,12 @@ jobs:
           fi
 
           if [ "${{ matrix.platform }}" = "macos" ]; then
-            cp atman/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg release-out/ 2>/dev/null || true
-            cp atman/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz release-out/ 2>/dev/null || true
-            cp atman/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig release-out/ 2>/dev/null || true
+            # DMG-t keresd `find`-del (lehet a `bundle/dmg/`-ben máshol)
+            find atman/src-tauri/target -name "*.dmg" -exec cp {} release-out/ \; 2>/dev/null || true
+            # Updater csomag és aláírás
+            find atman/src-tauri/target -name "*.app.tar.gz" -exec cp {} release-out/ \; 2>/dev/null || true
+            find atman/src-tauri/target -name "*.app.tar.gz.sig" -exec cp {} release-out/ \; 2>/dev/null || true
+            # Portable tar.gz (lehet hogy NINCS, az is OK)
             cp atman/release-staging/*.tar.gz release-out/ 2>/dev/null || true
           fi
 
