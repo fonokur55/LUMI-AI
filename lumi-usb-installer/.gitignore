@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# A beágyazott portable ZIP-et nem commit-oljuk; a CI build-időben
+# másolja oda. Helyi fejlesztéshez kézzel kell raknod oda egy
+# `lumi-portable.zip`-et a `src-tauri/embedded/` alá.
+src-tauri/embedded/lumi-portable.zip

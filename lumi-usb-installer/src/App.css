@@ -1,0 +1,383 @@
+/* =========================================================
+   LUMI USB Telepítő - egyszerű, fókuszált UI
+   ========================================================= */
+
+:root {
+  --bg-app: #f7f7f5;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --bg-hover: rgba(0, 0, 0, 0.045);
+  --bg-active: rgba(0, 0, 0, 0.08);
+  --text-primary: #18181b;
+  --text-secondary: #3f3f46;
+  --text-muted: #6b6b6b;
+  --border-subtle: rgba(0, 0, 0, 0.07);
+  --border-strong: rgba(0, 0, 0, 0.13);
+  --accent-web: #2563eb;
+  --accent-web-muted: #1e3a8a;
+  --accent-error: #ef4444;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-pill: 999px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue",
+    Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+.installer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px 28px 22px;
+  gap: 18px;
+}
+
+/* ===== Fejléc ===== */
+.installer__header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 6px 0 4px;
+}
+.installer__logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 14px rgba(37, 99, 235, 0.18));
+}
+.installer__header h1 {
+  margin: 8px 0 0;
+  font-size: 1.32rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.installer__subtitle {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* ===== Body ===== */
+.installer__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  animation: stage-fade 0.22s ease-out;
+}
+@keyframes stage-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.installer__section-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+.installer__loading {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 8px 0;
+}
+
+/* ===== Picker ===== */
+.installer__drive-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.installer__drive {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, transform 0.06s;
+}
+.installer__drive:hover:not(.is-disabled):not(.is-selected) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.installer__drive.is-selected {
+  border-color: var(--accent-web);
+  background: rgba(37, 99, 235, 0.06);
+}
+.installer__drive.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.installer__drive-letter {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-active);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+.installer__drive.is-selected .installer__drive-letter {
+  background: var(--accent-web);
+  color: #ffffff;
+}
+.installer__drive-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.installer__drive-name {
+  font-size: 0.92rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.installer__drive-sub {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.installer__drive-check {
+  flex-shrink: 0;
+  color: var(--accent-web);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.installer__empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.installer__refresh {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.installer__btn-link {
+  background: transparent;
+  color: var(--accent-web);
+  font-size: 0.82rem;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.12s;
+}
+.installer__btn-link:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+/* ===== Akciók ===== */
+.installer__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.installer__btn-primary {
+  padding: 11px 24px;
+  background: var(--accent-web);
+  color: #ffffff;
+  border-radius: var(--radius-pill);
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
+}
+.installer__btn-primary:hover:not(:disabled) {
+  background: var(--accent-web-muted);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
+}
+.installer__btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.installer__btn-secondary {
+  padding: 11px 20px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  font-size: 0.92rem;
+  transition: background 0.15s, border-color 0.15s;
+}
+.installer__btn-secondary:hover {
+  background: var(--bg-hover);
+  border-color: rgba(0, 0, 0, 0.22);
+}
+
+/* ===== Telepítés ===== */
+.installer__body--progress {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.installer__target {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-family: "Consolas", "Courier New", monospace;
+  margin: 0;
+}
+.installer__progress-bar {
+  width: 100%;
+  max-width: 360px;
+  height: 8px;
+  background: var(--bg-active);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  margin: 4px 0 2px;
+}
+.installer__progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-web), #60a5fa);
+  border-radius: var(--radius-pill);
+  transition: width 0.18s ease-out;
+}
+.installer__progress-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.installer__progress-file {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+/* ===== Sikeres telepítés ===== */
+.installer__body--success {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.installer__success-mark {
+  font-size: 3.4rem;
+  animation: success-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes success-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.installer__success-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+.installer__path {
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.88rem;
+  background: var(--bg-card);
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin: 0 0 6px;
+  user-select: text;
+  -webkit-user-select: text;
+  word-break: break-all;
+}
+
+/* ===== Hiba ===== */
+.installer__body--error {
+  align-items: center;
+  text-align: center;
+}
+.installer__error-mark {
+  font-size: 2.6rem;
+  color: var(--accent-error);
+}
+.installer__error-text {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: #991b1b;
+  margin: 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

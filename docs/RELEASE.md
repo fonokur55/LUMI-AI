@@ -120,6 +120,34 @@ A portable verziónak NINCS auto-update — a jelenleg integrált flow csak tele
 
 Ezt a portable-flow-t később lehet teljes-automatára cserélni (lásd a kód-kommentek a `UpdateBanner.tsx`-ben + a `src-tauri/src/lib.rs`-ben).
 
+### 6. USB Installer
+
+Minden release-hez a workflow elkészít egy `LUMI-USB-Installer-x.y.z.exe` fájlt is, ami egy önálló mini-app:
+- A user letölti és lefuttatja
+- Listázza a csatlakoztatott pendrive-okat és külső meghajtókat
+- A user kiválaszt egyet → "Telepítés" gomb → a beágyazott portable LUMI ZIP kibontva települ a `<DRIVE>:\LUMI` mappába
+- Sikeres telepítés után megnyitható az Intézőben vagy közvetlenül elindítható
+
+A beágyazott ZIP-et a workflow `Embed portable ZIP into USB Installer` lépése másolja a `lumi-usb-installer/src-tauri/embedded/lumi-portable.zip` helyre **közvetlenül a build előtt** — így a USB Installer mindig az aktuális release-hez tartozó LUMI-t tartalmazza.
+
+**Helyi USB Installer build:**
+```powershell
+# 1. Először buildeld az atman portable ZIP-jét (vagy másolj kézzel egyet)
+cd atman
+npm run tauri build -- --bundles nsis
+# Csomagold a target/release/atman.exe-t ZIP-be...
+
+# 2. Másold a ZIP-et a beágyazási helyre
+Copy-Item "release-staging/LUMI-x.y.z-portable.zip" `
+  "lumi-usb-installer/src-tauri/embedded/lumi-portable.zip"
+
+# 3. Build a USB Installert
+cd ../lumi-usb-installer
+npm install
+npm run tauri build -- --bundles nsis
+# Output: src-tauri/target/release/bundle/nsis/LUMI USB Telepítő_x.y.z_x64-setup.exe
+```
+
 ---
 
 ## Hibakeresés

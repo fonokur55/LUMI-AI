@@ -73,20 +73,51 @@ jobs:
           Compress-Archive -Path "$stagingDir/*" -DestinationPath $zipPath
           Write-Output "Portable ZIP: $zipPath"
 
+      - name: Embed portable ZIP into USB Installer
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $src = "atman/release-staging/LUMI-$version-windows-x64-portable.zip"
+          $dst = "lumi-usb-installer/src-tauri/embedded/lumi-portable.zip"
+          if (-not (Test-Path $src)) {
+            Write-Error "Portable ZIP nem található: $src"
+            exit 1
+          }
+          Copy-Item $src -Destination $dst -Force
+          Write-Output "Beágyazva: $dst ($((Get-Item $dst).Length) byte)"
+
+      - name: Install USB Installer npm deps
+        working-directory: lumi-usb-installer
+        run: npm install
+
+      - name: Build USB Installer (NSIS)
+        working-directory: lumi-usb-installer
+        run: npm run tauri build -- --bundles nsis
+
       - name: Collect release artifacts
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release-out | Out-Null
-          # NSIS installer + aláírt updater csomag + signature
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          # === Asztali NSIS installer + aláírt updater csomag ===
           Copy-Item "atman/src-tauri/target/release/bundle/nsis/*.exe" `
             -Destination release-out -ErrorAction SilentlyContinue
           Copy-Item "atman/src-tauri/target/release/bundle/nsis/*.nsis.zip" `
             -Destination release-out -ErrorAction SilentlyContinue
           Copy-Item "atman/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig" `
             -Destination release-out -ErrorAction SilentlyContinue
-          # Portable ZIP
+          # === Portable ZIP ===
           Copy-Item "atman/release-staging/*.zip" `
             -Destination release-out -ErrorAction SilentlyContinue
+          # === USB Installer ===
+          # Rename-eljük "LUMI-USB-Installer-x.y.z.exe"-re a jobb felismerhetőség kedvéért
+          $usbExe = Get-ChildItem `
+            "lumi-usb-installer/src-tauri/target/release/bundle/nsis/*.exe" `
+            | Select-Object -First 1
+          if ($usbExe) {
+            Copy-Item $usbExe.FullName `
+              -Destination "release-out/LUMI-USB-Installer-$version.exe"
+          }
           Get-ChildItem release-out
 
       - name: Generate latest.json
@@ -125,6 +156,7 @@ jobs:
             release-out/*.nsis.zip
             release-out/*.nsis.zip.sig
             release-out/*-portable.zip
+            release-out/LUMI-USB-Installer-*.exe
             release-out/latest.json
           generate_release_notes: true
         env:

@@ -1,0 +1,8 @@
+# Ez a mappa a build-időben kapja meg az `lumi-portable.zip` fájlt,
+# amit a Rust `include_bytes!` macro beágyaz a binárisba.
+#
+# A CI workflow másolja ide az `atman` portable build outputját
+# közvetlenül a `cargo build` előtt.
+#
+# Helyi fejlesztéshez kézzel kell raknod egy `lumi-portable.zip` fájlt
+# ide, különben a build elhasal.
