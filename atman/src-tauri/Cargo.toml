@@ -3,7 +3,7 @@
 # vezérli. A library-név (atman_lib) belső maradhat - a Rust modul-rendszer
 # nem szivárog ki sehova a kifelé látható UX-be.
 name = "lumi"
-version = "0.1.4"
+version = "0.1.5"
 description = "LUMI — portable private AI by NOMAD"
 authors = ["NOMAD"]
 edition = "2021"
@@ -36,6 +36,9 @@ base64 = "0.22"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# macOS/Linux llama.cpp release-ek .tar.gz formátumban érkeznek
+tar = "0.4"
+flate2 = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_Security"] }

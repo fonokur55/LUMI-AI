@@ -206,24 +206,40 @@ struct GhRelease {
 /// Aktuális OS + architektúra alapján kiválasztja a megfelelő llama.cpp
 /// release asset-jét.
 ///
-/// FONTOS: szigorúan a `.zip` végződésre szűrünk, mert egyes release-eken
-/// vannak `.tar.gz` és `.zip.sig` asset-ek is, és ha a `find` egy nem-zip
-/// fájlt fogna meg, az `extract_zip_runtime` "Could not find EOCD" hibát
-/// adna. A preferenciasor a tiszta CPU build → Vulkan/Metal → fallback.
+/// FORMÁTUMOK a llama.cpp release-en (b9413+):
+///   - Windows: `.zip` (pl. `llama-b9413-bin-win-cpu-x64.zip`)
+///   - macOS:   `.tar.gz` (pl. `llama-b9413-bin-macos-arm64.tar.gz`)
+///   - Linux:   `.tar.gz` (pl. `llama-b9413-bin-ubuntu-x64.tar.gz`)
+///
+/// A `llama_asset_extension()` mondja meg melyik formátumot várjuk, és
+/// a download_runtime az extension alapján választja a zip vagy tar.gz
+/// extractort.
 fn pick_llama_asset_name() -> Vec<&'static str> {
     if cfg!(target_os = "windows") {
-        // Tipikus minta: "llama-b5050-bin-win-cpu-x64.zip"
+        // Preferenciasor: tiszta CPU build → Vulkan → fallback.
+        // Tipikus minta: "llama-b9413-bin-win-cpu-x64.zip"
         vec!["bin-win-cpu-x64", "bin-win-vulkan-x64", "bin-win-x64"]
     } else if cfg!(target_os = "macos") {
         if cfg!(target_arch = "aarch64") {
-            // macOS ARM: "llama-bXXXX-bin-macos-arm64.zip"
+            // macOS ARM: "llama-b9413-bin-macos-arm64.tar.gz"
             vec!["bin-macos-arm64", "bin-macos-aarch64"]
         } else {
             vec!["bin-macos-x64", "bin-macos-amd64"]
         }
     } else {
-        // Linux: "llama-bXXXX-bin-ubuntu-x64.zip"
+        // Linux: "llama-b9413-bin-ubuntu-x64.tar.gz"
         vec!["bin-ubuntu-x64", "bin-linux-x64"]
+    }
+}
+
+/// A platform-natív llama.cpp asset-formátuma.
+/// - Windows: `.zip`
+/// - macOS / Linux: `.tar.gz`
+fn llama_asset_extension() -> &'static str {
+    if cfg!(target_os = "windows") {
+        ".zip"
+    } else {
+        ".tar.gz"
     }
 }
 
@@ -260,43 +276,45 @@ pub async fn download_runtime(
         .map_err(|e| format!("Release-JSON parse hiba: {e}"))?;
 
     let patterns = pick_llama_asset_name();
+    let expected_ext = llama_asset_extension(); // ".zip" Windows-on, ".tar.gz" máshol
     let asset = patterns
         .iter()
         .find_map(|pat| {
             release.assets.iter().find(|a| {
+                let lower = a.name.to_lowercase();
                 // SZIGORÚ feltételek:
                 //   - tartalmazza a pattern-t (pl. "bin-macos-arm64")
-                //   - .zip végződésű (NEM .tar.gz, NEM .zip.sig, NEM .sha256)
+                //   - az OS-natív formátum (".zip" Windows-on, ".tar.gz" máshol)
+                //   - NEM aláírás vagy checksum (.sig, .sha256)
                 //   - NEM CUDA-runtime csomag (nincs Nvidia GPU)
                 a.name.contains(pat)
-                    && a.name.to_lowercase().ends_with(".zip")
-                    && !a.name.to_lowercase().ends_with(".zip.sig")
-                    && !a.name.to_lowercase().ends_with(".zip.sha256")
+                    && lower.ends_with(expected_ext)
+                    && !lower.ends_with(".sig")
+                    && !lower.ends_with(".sha256")
                     && !a.name.starts_with("cudart-")
             })
         })
         .ok_or_else(|| {
-            // Diagnosztika a logba: lássuk milyen asset-ek voltak elérhetők
             let available: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
             format!(
-                "Nem található megfelelő .zip llama-server csomag az aktuális OS-hez. \
+                "Nem található megfelelő {expected_ext} llama-server csomag az aktuális OS-hez. \
                  Próbáld manuálisan: https://github.com/ggml-org/llama.cpp/releases \n\
                  Keresett minták: {patterns:?}\nElérhető asset-ek: {available:?}"
             )
         })?;
 
-    // 2. Letöltés egy temp ZIP-be
-    let tmp_zip = std::env::temp_dir().join(format!("lumi-llama-{}", asset.name));
+    // 2. Letöltés egy temp fájlba (.zip vagy .tar.gz)
+    let tmp_file = std::env::temp_dir().join(format!("lumi-llama-{}", asset.name));
     download_stream_to_file(
         app,
         component,
         &client,
         &asset.browser_download_url,
-        &tmp_zip,
+        &tmp_file,
     )
     .await?;
 
-    // 3. Kibontás a runtime mappába
+    // 3. Kibontás a runtime mappába - extension alapján zip vagy tar.gz
     let _ = app.emit(
         "download-extracting",
         DownloadDone {
@@ -305,9 +323,13 @@ pub async fn download_runtime(
     );
     std::fs::create_dir_all(&runtime_dir)
         .map_err(|e| format!("Mappa-létrehozás hiba: {e}"))?;
-    extract_zip_runtime(&tmp_zip, &runtime_dir)?;
-    // Temp ZIP törlése
-    let _ = std::fs::remove_file(&tmp_zip);
+    if expected_ext == ".zip" {
+        extract_zip_runtime(&tmp_file, &runtime_dir)?;
+    } else {
+        extract_tar_gz_runtime(&tmp_file, &runtime_dir)?;
+    }
+    // Temp fájl törlése
+    let _ = std::fs::remove_file(&tmp_file);
 
     let _ = app.emit(
         "download-done",
@@ -383,6 +405,88 @@ fn extract_zip_runtime(zip_path: &Path, runtime_dir: &Path) -> Result<(), String
             .map_err(|e| format!("Kicsomagolási hiba: {e}"))?;
 
         // Unix-on a llama-server-nek futtathatónak kell lennie.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if lower.contains("llama-server") || !lower.contains('.') {
+                let _ = std::fs::set_permissions(
+                    &out_path,
+                    std::fs::Permissions::from_mode(0o755),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A llama.cpp macOS és Linux release-jei `.tar.gz` formátumúak. A
+/// kibontás-logika ugyanaz mint a ZIP-é: minden `llama-server*`,
+/// `*.dll`/`*.dylib`/`*.so` fájlt a `runtime_dir` gyökerébe pakolunk.
+fn extract_tar_gz_runtime(tar_gz_path: &Path, runtime_dir: &Path) -> Result<(), String> {
+    // Sanity check: GZIP magic bytes (1f 8b)
+    {
+        use std::io::Read;
+        let mut head = [0u8; 2];
+        let n = std::fs::File::open(tar_gz_path)
+            .and_then(|mut f| f.read(&mut head))
+            .map_err(|e| format!("Letöltött fájl nem nyitható meg: {e}"))?;
+        if n < 2 || head != [0x1f, 0x8b] {
+            return Err(format!(
+                "A letöltött fájl nem GZIP formátumú (várt: 1f8b, kapott: {head:?}). \
+                 Lehet, hogy a letöltés sérült. A fájl helye: {}",
+                tar_gz_path.display(),
+            ));
+        }
+    }
+
+    let file = std::fs::File::open(tar_gz_path)
+        .map_err(|e| format!("Tar.gz-megnyitás hiba: {e}"))?;
+    let decoder = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+
+    let entries = archive
+        .entries()
+        .map_err(|e| format!("Tar-olvasás hiba: {e}"))?;
+
+    for entry in entries {
+        let mut entry = entry.map_err(|e| format!("Tar-entry hiba: {e}"))?;
+
+        // Csak a fájlokat fogadjuk (nem a könyvtárakat, nem symlinkeket)
+        let entry_type = entry.header().entry_type();
+        if !entry_type.is_file() {
+            continue;
+        }
+
+        // A fájl path-ja a tar-ban (általában `build/bin/llama-server` vagy hasonló)
+        let path_in_tar = entry
+            .path()
+            .map_err(|e| format!("Tar path hiba: {e}"))?
+            .into_owned();
+        let basename = path_in_tar
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let lower = basename.to_lowercase();
+
+        // Csak a runtime-hoz szükséges fájlokat tartjuk meg
+        let keep = lower.contains("llama-server")
+            || lower.contains("llama.")
+            || lower.ends_with(".dll")
+            || lower.ends_with(".dylib")
+            || lower.ends_with(".so")
+            || lower == "llama-server.exe"
+            || lower == "llama-server";
+        if !keep {
+            continue;
+        }
+
+        let out_path = runtime_dir.join(basename);
+        let mut out_file = std::fs::File::create(&out_path)
+            .map_err(|e| format!("Írási hiba ({}): {e}", out_path.display()))?;
+        std::io::copy(&mut entry, &mut out_file)
+            .map_err(|e| format!("Tar kicsomagolási hiba: {e}"))?;
+
+        // Unix-on a llama-server-nek futtathatónak kell lennie
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
