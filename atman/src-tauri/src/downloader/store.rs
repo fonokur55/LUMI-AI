@@ -204,22 +204,26 @@ struct GhRelease {
 }
 
 /// Aktuális OS + architektúra alapján kiválasztja a megfelelő llama.cpp
-/// release asset-jét. A regex-mintákat a `scripts/fetch-llama.*` követi.
+/// release asset-jét.
+///
+/// FONTOS: szigorúan a `.zip` végződésre szűrünk, mert egyes release-eken
+/// vannak `.tar.gz` és `.zip.sig` asset-ek is, és ha a `find` egy nem-zip
+/// fájlt fogna meg, az `extract_zip_runtime` "Could not find EOCD" hibát
+/// adna. A preferenciasor a tiszta CPU build → Vulkan/Metal → fallback.
 fn pick_llama_asset_name() -> Vec<&'static str> {
-    // Preferenciasor: tiszta CPU build előny (irodai PC, portable),
-    // mert a CUDA verzió nem fut Nvidia GPU nélkül.
     if cfg!(target_os = "windows") {
         // Tipikus minta: "llama-b5050-bin-win-cpu-x64.zip"
-        vec!["bin-win-cpu-x64", "bin-win-vulkan-x64"]
+        vec!["bin-win-cpu-x64", "bin-win-vulkan-x64", "bin-win-x64"]
     } else if cfg!(target_os = "macos") {
         if cfg!(target_arch = "aarch64") {
-            vec!["bin-macos-arm64"]
+            // macOS ARM: "llama-bXXXX-bin-macos-arm64.zip"
+            vec!["bin-macos-arm64", "bin-macos-aarch64"]
         } else {
-            vec!["bin-macos-x64"]
+            vec!["bin-macos-x64", "bin-macos-amd64"]
         }
     } else {
-        // Linux
-        vec!["bin-ubuntu-x64"]
+        // Linux: "llama-bXXXX-bin-ubuntu-x64.zip"
+        vec!["bin-ubuntu-x64", "bin-linux-x64"]
     }
 }
 
@@ -259,15 +263,25 @@ pub async fn download_runtime(
     let asset = patterns
         .iter()
         .find_map(|pat| {
-            release
-                .assets
-                .iter()
-                .find(|a| a.name.contains(pat) && !a.name.starts_with("cudart-"))
+            release.assets.iter().find(|a| {
+                // SZIGORÚ feltételek:
+                //   - tartalmazza a pattern-t (pl. "bin-macos-arm64")
+                //   - .zip végződésű (NEM .tar.gz, NEM .zip.sig, NEM .sha256)
+                //   - NEM CUDA-runtime csomag (nincs Nvidia GPU)
+                a.name.contains(pat)
+                    && a.name.to_lowercase().ends_with(".zip")
+                    && !a.name.to_lowercase().ends_with(".zip.sig")
+                    && !a.name.to_lowercase().ends_with(".zip.sha256")
+                    && !a.name.starts_with("cudart-")
+            })
         })
         .ok_or_else(|| {
+            // Diagnosztika a logba: lássuk milyen asset-ek voltak elérhetők
+            let available: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
             format!(
-                "Nem található megfelelő llama-server csomag. Próbáld manuálisan: \
-                https://github.com/ggml-org/llama.cpp/releases"
+                "Nem található megfelelő .zip llama-server csomag az aktuális OS-hez. \
+                 Próbáld manuálisan: https://github.com/ggml-org/llama.cpp/releases \n\
+                 Keresett minták: {patterns:?}\nElérhető asset-ek: {available:?}"
             )
         })?;
 
@@ -309,6 +323,27 @@ pub async fn download_runtime(
 /// másolunk a `runtime_dir`-be, hogy a meglévő `runtime_binary_path`
 /// (paths.rs) megtalálja.
 fn extract_zip_runtime(zip_path: &Path, runtime_dir: &Path) -> Result<(), String> {
+    // Sanity check: olvassuk be az első 4 byte-ot. Egy ZIP-fájl mindig
+    // a "PK\x03\x04" signature-rel kezdődik. Ha mást találunk, sokkal
+    // értelmesebb hibaüzenetet adunk mint a `zip` crate „Could not find
+    // EOCD"-je (ami azt jelenti, a fájl egyáltalán nem ZIP).
+    {
+        use std::io::Read;
+        let mut head = [0u8; 4];
+        let n = std::fs::File::open(zip_path)
+            .and_then(|mut f| f.read(&mut head))
+            .map_err(|e| format!("Letöltött fájl nem nyitható meg: {e}"))?;
+        if n < 4 || &head[..4] != b"PK\x03\x04" {
+            return Err(format!(
+                "A letöltött fájl nem ZIP formátumú (várt: PK\\x03\\x04, kapott: {:?}). \
+                 Lehet, hogy a llama.cpp release-en az aktuális OS-hez .tar.gz formátum van, \
+                 vagy a letöltés sérült. A fájl helye: {}",
+                &head[..n],
+                zip_path.display(),
+            ));
+        }
+    }
+
     let file = std::fs::File::open(zip_path)
         .map_err(|e| format!("ZIP-megnyitás hiba: {e}"))?;
     let mut archive =
