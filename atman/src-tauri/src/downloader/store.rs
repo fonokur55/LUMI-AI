@@ -6,18 +6,26 @@
 //
 //   - llama-server bináris (~30-46 MB, OS-tól függően) - a llama.cpp
 //     GitHub release legfrissebbjéből
-//   - Eco modell (~2 GB) - Qwen2.5-3B-Instruct, HuggingFace
-//   - Brain modell (~4.7 GB) - Qwen2.5-Coder-7B-Instruct, HuggingFace
-//   - Creative modell (~4.9 GB) - Dolphin-2.9.4-Llama3.1-8B, HuggingFace
 //
-//  Csak az Eco kötelező. Brain/Creative a felhasználó döntése alapján
-//  külön letölthető a Beállítások › Modellek szekcióból.
+//   - Modellek tier × slot mátrixa (9 cella, lásd `catalog.rs`):
+//       Light   × {Eco, Brain, Creative}  → ~4.2 GB összesen
+//       Standard × {Eco, Brain, Creative} → ~14 GB összesen
+//       Pro     × {Eco, Brain, Creative}  → ~22 GB összesen
+//
+//  Az első indításkor a hardware-detektálás alapján AJÁNLOTT tier
+//  3 modelljét (Eco + Brain + Creative) tölti le egyben - minimum_ready
+//  a recommended_tier teljes csomagja + a runtime megléte.
+//
+//  Más tier modelljei a Beállítások › Modellek menüből manuálisan
+//  letölthetők, ha a user pl. forced_tier-rel egy másik tier-re vált.
 //
 //  Megszakíthatóság: ha a user kilép letöltés közben, a part-fájl nem
 //  marad meg - a következő indításkor 0-ról kezdi az adott komponenst.
 //  Az ELKÉSZÜLT komponensek megmaradnak.
 // =========================================================================
 
+use crate::akasha::perf::Tier;
+use crate::downloader::catalog::{self, ModelEntry, Slot};
 use futures_util::StreamExt;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -28,22 +36,54 @@ use tokio::io::AsyncWriteExt;
 //  Setup status check
 // =========================================================================
 
-/// A meglévő komponensek állapota a `models/` és `runtime/` mappákban.
-/// A frontend ez alapján dönti el, megjeleníti-e a first-run wizardot,
-/// és a Beállításokban mit jelenít meg "telepítve" / "letöltendő"-ként.
+/// Egy konkrét tier × slot cella telepítettsége. A frontend a teljes
+/// 9-cellás mátrixot kapja meg (még a nem-recommended tier-eket is,
+/// hogy a Beállítások › Modellek táblázatában tudja mutatni).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelStatus {
+    pub tier: Tier,
+    pub slot: Slot,
+    pub installed: bool,
+    /// Megjeleníthető név (a katalógusból, pl. "Qwen 2.5 Coder 7B")
+    pub display_name: &'static str,
+    /// Méret GB-ban
+    pub size_gb: f32,
+}
+
+/// A meglévő komponensek és az ajánlott tier állapota. A frontend ez
+/// alapján dönti el:
+///  - megjeleníti-e a first-run download wizardot
+///  - a Beállítások › Modellek táblázatában mit mutat „telepítve" / „letöltendő"
+///  - a ChatView slot-választójában mit disable-l
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetupStatus {
     /// A llama-server bináris elérhető-e (>=10 MB)
     pub runtime_installed: bool,
-    /// Eco modell elérhető-e (>=50 MB, kötelező)
-    pub eco_installed: bool,
-    /// Brain modell elérhető-e (opcionális)
-    pub brain_installed: bool,
-    /// Creative modell elérhető-e (opcionális)
-    pub creative_installed: bool,
-    /// A kötelező minimum (runtime + Eco) megvan-e
+    /// A hardware-detektálás alapján ajánlott tier (Limp/Standard/Pro).
+    /// Blocked esetén a wizard nem nyílik meg, az app figyelmeztet.
+    pub recommended_tier: Tier,
+    /// A 9 cella állapota (3 tier × 3 slot)
+    pub models: Vec<ModelStatus>,
+    /// A KÖTELEZŐ minimum: runtime + recommended_tier 3 modellje
     pub minimum_ready: bool,
+}
+
+impl SetupStatus {
+    /// Visszaadja, hogy egy konkrét tier × slot kombináció telepítve van-e.
+    pub fn is_installed(&self, tier: Tier, slot: Slot) -> bool {
+        self.models
+            .iter()
+            .any(|m| m.tier == tier && m.slot == slot && m.installed)
+    }
+
+    /// Egy adott tier 3 modellje (Eco+Brain+Creative) mind telepítve van-e.
+    pub fn tier_pack_ready(&self, tier: Tier) -> bool {
+        self.is_installed(tier, Slot::Eco)
+            && self.is_installed(tier, Slot::Brain)
+            && self.is_installed(tier, Slot::Creative)
+    }
 }
 
 /// Akkor tekintünk egy modell-fájlt "telepítettnek", ha legalább 50 MB
@@ -58,23 +98,39 @@ fn file_at_least(path: &Path, min_bytes: u64) -> bool {
         .unwrap_or(false)
 }
 
+/// A teljes 9-cellás mátrix telepítettségét + a runtime állapotát adja vissza.
+/// A `recommended_tier` a hívó dolga (hardware-snapshot alapján).
 pub fn check_setup_status(
     runtime_llama_path: &Path,
     models_akasha_dir: &Path,
-    eco_file: &str,
-    brain_file: &str,
-    creative_file: &str,
+    recommended_tier: Tier,
 ) -> SetupStatus {
     let runtime_installed = file_at_least(runtime_llama_path, RUNTIME_MIN_BYTES);
-    let eco_installed = file_at_least(&models_akasha_dir.join(eco_file), MODEL_MIN_BYTES);
-    let brain_installed = file_at_least(&models_akasha_dir.join(brain_file), MODEL_MIN_BYTES);
-    let creative_installed = file_at_least(&models_akasha_dir.join(creative_file), MODEL_MIN_BYTES);
+
+    let models: Vec<ModelStatus> = catalog::CATALOG
+        .iter()
+        .map(|entry: &ModelEntry| {
+            let path = models_akasha_dir.join(entry.local_filename());
+            ModelStatus {
+                tier: entry.tier,
+                slot: entry.slot,
+                installed: file_at_least(&path, MODEL_MIN_BYTES),
+                display_name: entry.display_name,
+                size_gb: entry.size_gb,
+            }
+        })
+        .collect();
+
+    let recommended_pack_ready = catalog::tier_pack(recommended_tier).iter().all(|m| {
+        let path = models_akasha_dir.join(m.local_filename());
+        file_at_least(&path, MODEL_MIN_BYTES)
+    });
+
     SetupStatus {
         runtime_installed,
-        eco_installed,
-        brain_installed,
-        creative_installed,
-        minimum_ready: runtime_installed && eco_installed,
+        recommended_tier,
+        models,
+        minimum_ready: runtime_installed && recommended_pack_ready,
     }
 }
 
@@ -310,9 +366,24 @@ fn extract_zip_runtime(zip_path: &Path, runtime_dir: &Path) -> Result<(), String
 //  Modell letöltés (HuggingFace public)
 // =========================================================================
 
+/// Egy konkrét tier × slot modell letöltése a katalógus szerint.
+/// A `target_path` a `models/akasha/<tier>-<slot>.gguf` lesz, a `component`
+/// pedig az event-azonosító (`light-eco`, `standard-brain` stb.).
+pub async fn download_tier_model(
+    app: &AppHandle,
+    tier: Tier,
+    slot: Slot,
+    target_dir: &Path,
+) -> Result<(), String> {
+    let entry = catalog::lookup(tier, slot)
+        .ok_or_else(|| format!("Nem található katalógus-bejegyzés: {tier:?}/{slot:?}"))?;
+    let component = format!("{}-{}", catalog::tier_key_for_filename(tier), slot.key());
+    let target_path = target_dir.join(entry.local_filename());
+    download_model(app, &component, target_path, entry.repo, entry.file).await
+}
+
 /// HuggingFace publikus modell letöltése. A `repo` és `file` paramétereket
-/// a hívó adja meg (a `scripts/fetch-akasha-arsenal.*` script-tel azonos
-/// értékek). Letöltés után a `target_path`-ra mentődik.
+/// a hívó adja meg. Letöltés után a `target_path`-ra mentődik.
 ///
 /// Sikeres letöltés végén `download-done` event-tel jelez a frontendnek.
 pub async fn download_model(

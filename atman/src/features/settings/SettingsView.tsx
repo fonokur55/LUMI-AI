@@ -3,10 +3,11 @@ import { listen } from "@tauri-apps/api/event";
 import {
   api,
   type AtmanConfig,
-  type DownloadComponent,
+  type DlSlot,
   type DownloadDoneEvent,
   type DownloadProgressEvent,
   type HardwareProfile,
+  type ModelStatus,
   type PerfTier,
   type SetupStatus,
 } from "../../lib/api";
@@ -40,14 +41,16 @@ const idleDownload = (): ModelDownloadState => ({
   speedMbps: 0,
 });
 
+/** Cella-kulcs a 9-cellás letöltés-állapot map-hez. */
+const cellKey = (tier: PerfTier, slot: DlSlot): string => `${tier}-${slot}`;
+
 export function SettingsView() {
   const [config, setConfig] = useState<AtmanConfig | null>(null);
   const [profile, setProfile] = useState<HardwareProfile | null>(null);
   const [memoryModalOpen, setMemoryModalOpen] = useState(false);
-  // Modellek állapota a Beállítások › Modellek szekcióhoz
+  // Setup-status + 9 cellás letöltés-állapot map
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
-  const [brainDl, setBrainDl] = useState<ModelDownloadState>(idleDownload);
-  const [creativeDl, setCreativeDl] = useState<ModelDownloadState>(idleDownload);
+  const [downloads, setDownloads] = useState<Record<string, ModelDownloadState>>({});
 
   // Auto-save debounce: az utolsó setConfig hívás után 500ms-mal mentünk.
   const saveTimerRef = useRef<number | null>(null);
@@ -71,46 +74,61 @@ export function SettingsView() {
     load();
   }, [load]);
 
-  // Modell-letöltés progress event-ek a Beállítások szekcióhoz.
-  // (Független a First-run wizardtól; ha a user innen indít letöltést,
-  // a SAJÁT state-jeink frissülnek.)
+  // Modell-letöltés progress event-ek a Beállítások szekcióhoz - a 9
+  // cellás map alapján frissít. A komponens-azonosító `<tier>-<slot>`
+  // formátumú a backend event-ekben, pl. `standard-brain`.
   useEffect(() => {
     const unlistens: Array<() => void> = [];
-    const setterFor = (c: DownloadComponent) => {
-      if (c === "brain") return setBrainDl;
-      if (c === "creative") return setCreativeDl;
-      return null;
-    };
     listen<DownloadProgressEvent>("download-progress", (event) => {
-      const set = setterFor(event.payload.component);
-      if (!set) return;
-      set((s) => ({
-        ...s,
-        status: "downloading",
-        percent: event.payload.percent,
-        downloadedMb: event.payload.downloadedBytes / 1_048_576,
-        totalMb: event.payload.totalBytes / 1_048_576,
-        speedMbps: event.payload.speedMbps,
+      const key = event.payload.component;
+      if (key === "runtime") return;
+      setDownloads((prev) => ({
+        ...prev,
+        [key]: {
+          status: "downloading",
+          percent: event.payload.percent,
+          downloadedMb: event.payload.downloadedBytes / 1_048_576,
+          totalMb: event.payload.totalBytes / 1_048_576,
+          speedMbps: event.payload.speedMbps,
+        },
       }));
     }).then((un) => unlistens.push(un));
     listen<DownloadDoneEvent>("download-done", (event) => {
-      const set = setterFor(event.payload.component);
-      if (!set) return;
-      set(idleDownload);
-      // Frissítsük a setup-státuszt, hogy a "telepítve" jelzés frissüljön
+      const key = event.payload.component;
+      if (key === "runtime") return;
+      setDownloads((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
       api.checkSetupStatus().then(setSetupStatus).catch(() => {});
       showToast("Modell letöltése kész");
     }).then((un) => unlistens.push(un));
     return () => unlistens.forEach((un) => un());
   }, []);
 
-  const startModelDownload = async (slot: "brain" | "creative") => {
-    const setter = slot === "brain" ? setBrainDl : setCreativeDl;
-    setter((s) => ({ ...s, status: "downloading", percent: 0, error: undefined }));
+  const startModelDownload = async (tier: PerfTier, slot: DlSlot) => {
+    const key = cellKey(tier, slot);
+    setDownloads((prev) => ({
+      ...prev,
+      [key]: { ...idleDownload(), status: "downloading" },
+    }));
     try {
-      await api.downloadComponent(slot);
+      await api.downloadTierModel(tier, slot);
     } catch (e) {
-      setter((s) => ({ ...s, status: "error", error: String(e) }));
+      setDownloads((prev) => ({
+        ...prev,
+        [key]: { ...idleDownload(), status: "error", error: String(e) },
+      }));
+      showToast(`Letöltés sikertelen: ${e}`, "error", 4000);
+    }
+  };
+
+  const startTierPackDownload = async (tier: PerfTier) => {
+    try {
+      await api.downloadTierPack(tier);
+      showToast(`${tier} tier modelljei letöltve`);
+    } catch (e) {
       showToast(`Letöltés sikertelen: ${e}`, "error", 4000);
     }
   };
@@ -282,16 +300,33 @@ export function SettingsView() {
         <SelectField
           label="Mód kézi felülírása"
           value={perf.forcedTier ?? "auto"}
-          onChange={(v) =>
-            updatePerf({ forcedTier: v === "auto" ? null : v })
-          }
+          onChange={(v) => {
+            const newTier = v === "auto" ? null : v;
+            updatePerf({ forcedTier: newTier });
+            // Ha a user új tier-re vált és annak modelljei hiányoznak,
+            // figyelmeztessük a Beállítások › Modellek menüre.
+            if (newTier && setupStatus) {
+              const tierModels = setupStatus.models.filter(
+                (m) => m.tier === newTier,
+              );
+              const missing = tierModels.filter((m) => !m.installed);
+              if (missing.length > 0) {
+                const missingGb = missing.reduce((sum, m) => sum + m.sizeGb, 0);
+                showToast(
+                  `Az új mód ${missing.length} modellje hiányzik (~${missingGb.toFixed(1)} GB). Töltsd le a Modellek szekcióban.`,
+                  "info",
+                  6000,
+                );
+              }
+            }
+          }}
           options={[
             { value: "auto", label: "AUTO (detektált alapján)" },
             { value: "limp", label: "Light mód - gyenge gépre" },
             { value: "standard", label: "Standard mód - átlagos gépre" },
             { value: "pro", label: "Pro mód - erős gépre" },
           ]}
-          hint="⚠️ Csak akkor használd, ha tudod, mit csinálsz — gyengébb gépen a Pro mód lassú lesz, és a többi program is akadhat."
+          hint="⚠️ Csak akkor használd, ha tudod, mit csinálsz — gyengébb gépen a Pro mód lassú lesz, és a többi program is akadhat. Ha új módot választasz és annak modelljei hiányoznak, a Modellek szekcióban töltheted le őket."
         />
 
         <ContextSlider
@@ -300,36 +335,49 @@ export function SettingsView() {
         />
       </section>
 
-      {/* ===== MODELLEK (Eco mindig kötelező; Brain és Creative opcionális) ===== */}
+      {/* ===== MODELLEK (3 tier × 3 slot mátrix) ===== */}
       <section className="settings-card">
         <h2>Modellek</h2>
         <p className="settings-view__hint">
-          A LUMI motorja, AKASHA három modellt tud használni. Az{" "}
-          <strong>Eco</strong> a kötelező alap; a <strong>Brain</strong>{" "}
-          (kódolás, matematika) és a <strong>Creative</strong> (kreatív írás)
-          opcionális. <em>Ajánljuk az összes modell telepítését</em> a teljes
-          élményhez. Amíg nincsenek telepítve, a chat-választóban
-          kiválaszthatatlanok.
+          A LUMI az AKASHA motort 3 mód (<strong>Light/Standard/Pro</strong>) és
+          3 témakör (<strong>Eco/Brain/Creative</strong>) szerint csoportosítja.
+          Az appod a géped képességei alapján az ajánlott módot használja, de
+          itt bármelyik mód modelljeit letöltheted. A <strong>Brain</strong>{" "}
+          modellek a kódolás-specifikus Qwen Coder családból jönnek, az{" "}
+          <strong>Eco/Creative</strong> a magyar nyelven erős Gemma családból.
         </p>
 
-        <ModelRow
-          label="Eco — gyors általános beszélgetés"
-          installed={!!setupStatus?.ecoInstalled}
-          required
-          locked
-        />
-        <ModelRow
-          label="Brain — kódolás, matematika"
-          installed={!!setupStatus?.brainInstalled}
-          dl={brainDl}
-          onDownload={() => startModelDownload("brain")}
-        />
-        <ModelRow
-          label="Creative — kreatív írás, történet"
-          installed={!!setupStatus?.creativeInstalled}
-          dl={creativeDl}
-          onDownload={() => startModelDownload("creative")}
-        />
+        {setupStatus && (
+          <>
+            <ModelTierBlock
+              tier="limp"
+              label="Light mód — gyenge gépre, ~4 GB összesen"
+              models={setupStatus.models.filter((m) => m.tier === "limp")}
+              recommended={setupStatus.recommendedTier === "limp"}
+              downloads={downloads}
+              onDownload={startModelDownload}
+              onPack={() => startTierPackDownload("limp")}
+            />
+            <ModelTierBlock
+              tier="standard"
+              label="Standard mód — átlagos gépre, ~14 GB összesen"
+              models={setupStatus.models.filter((m) => m.tier === "standard")}
+              recommended={setupStatus.recommendedTier === "standard"}
+              downloads={downloads}
+              onDownload={startModelDownload}
+              onPack={() => startTierPackDownload("standard")}
+            />
+            <ModelTierBlock
+              tier="pro"
+              label="Pro mód — erős gépre, ~22 GB összesen"
+              models={setupStatus.models.filter((m) => m.tier === "pro")}
+              recommended={setupStatus.recommendedTier === "pro"}
+              downloads={downloads}
+              onDownload={startModelDownload}
+              onPack={() => startTierPackDownload("pro")}
+            />
+          </>
+        )}
       </section>
 
       {/* ===== MEMÓRIA-KÁRTYÁK (Gemini-stílus) ===== */}
@@ -541,35 +589,98 @@ function ThemeOption({
   );
 }
 
-function ModelRow({
+function ModelTierBlock({
+  tier,
   label,
-  installed,
-  required,
-  locked,
+  models,
+  recommended,
+  downloads,
+  onDownload,
+  onPack,
+}: {
+  tier: PerfTier;
+  label: string;
+  models: ModelStatus[];
+  recommended: boolean;
+  downloads: Record<string, ModelDownloadState>;
+  onDownload: (tier: PerfTier, slot: DlSlot) => void;
+  onPack: () => void;
+}) {
+  const eco = models.find((m) => m.slot === "eco");
+  const brain = models.find((m) => m.slot === "brain");
+  const creative = models.find((m) => m.slot === "creative");
+  const allInstalled = eco?.installed && brain?.installed && creative?.installed;
+  return (
+    <div className={`settings-tier-block ${recommended ? "is-recommended" : ""}`}>
+      <div className="settings-tier-block__head">
+        <h3 className="settings-tier-block__title">
+          {label}
+          {recommended && (
+            <span className="settings-tier-block__badge">Ajánlott a gépedhez</span>
+          )}
+        </h3>
+        {!allInstalled && (
+          <button
+            type="button"
+            className="settings-view__btn"
+            onClick={onPack}
+          >
+            Az egész {tier === "limp" ? "Light" : tier === "pro" ? "Pro" : "Standard"} letöltése
+          </button>
+        )}
+      </div>
+      {eco && (
+        <ModelCell
+          model={eco}
+          dl={downloads[`${tier}-eco`]}
+          onDownload={() => onDownload(tier, "eco")}
+        />
+      )}
+      {brain && (
+        <ModelCell
+          model={brain}
+          dl={downloads[`${tier}-brain`]}
+          onDownload={() => onDownload(tier, "brain")}
+        />
+      )}
+      {creative && (
+        <ModelCell
+          model={creative}
+          dl={downloads[`${tier}-creative`]}
+          onDownload={() => onDownload(tier, "creative")}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModelCell({
+  model,
   dl,
   onDownload,
 }: {
-  label: string;
-  installed: boolean;
-  required?: boolean;
-  /** Locked = nincs "Letöltés" gomb (pl. az Eco-t a wizard tölti). */
-  locked?: boolean;
+  model: ModelStatus;
   dl?: ModelDownloadState;
-  onDownload?: () => void;
+  onDownload: () => void;
 }) {
   const downloading = dl?.status === "downloading";
+  const slotLabel = {
+    eco: "Eco",
+    brain: "Brain",
+    creative: "Creative",
+  }[model.slot];
   return (
-    <div className={`settings-model-row ${installed ? "is-installed" : ""}`}>
-      <span className={`settings-model-row__icon ${installed ? "is-ok" : ""}`}>
-        {installed ? "✓" : downloading ? "⟳" : "○"}
+    <div className={`settings-model-row ${model.installed ? "is-installed" : ""}`}>
+      <span className={`settings-model-row__icon ${model.installed ? "is-ok" : ""}`}>
+        {model.installed ? "✓" : downloading ? "⟳" : "○"}
       </span>
       <div className="settings-model-row__body">
         <div className="settings-model-row__label">
-          {label}
-          {required && (
-            <span className="settings-model-row__badge">kötelező</span>
-          )}
+          <span>
+            <strong>{slotLabel}</strong> · {model.displayName}
+          </span>
         </div>
+        <div className="settings-model-row__meta">~{model.sizeGb.toFixed(1)} GB</div>
         {downloading && dl && (
           <>
             <div className="settings-model-row__bar">
@@ -591,12 +702,10 @@ function ModelRow({
           </>
         )}
         {dl?.status === "error" && (
-          <div className="settings-model-row__error">
-            Hiba: {dl.error}
-          </div>
+          <div className="settings-model-row__error">Hiba: {dl.error}</div>
         )}
       </div>
-      {!installed && !locked && !downloading && onDownload && (
+      {!model.installed && !downloading && (
         <button
           type="button"
           className="settings-view__btn settings-model-row__btn"
@@ -605,7 +714,7 @@ function ModelRow({
           Letöltés
         </button>
       )}
-      {installed && (
+      {model.installed && (
         <span className="settings-model-row__status">Telepítve</span>
       )}
     </div>

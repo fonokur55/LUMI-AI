@@ -127,6 +127,9 @@ fn detect_tier(snap: &HardwareSnapshot, has_avx2: bool) -> Tier {
 }
 
 fn recommend(tier: Tier) -> ModelRecommendation {
+    // v0.1.3+: a tier-szintű ajánlás a 9-cellás katalógus 3 modellének
+    // ÖSSZmérete (Eco + Brain + Creative). A display_name a tier
+    // arc-modellje (Eco) - a teljes csomag mérete a sizeGb-ben.
     match tier {
         Tier::Blocked => ModelRecommendation {
             display_name: "-".into(),
@@ -135,20 +138,20 @@ fn recommend(tier: Tier) -> ModelRecommendation {
             n_threads: 0,
         },
         Tier::Limp => ModelRecommendation {
-            display_name: "Gemma-2-2B-it abliterated (Q4_K_M)".into(),
-            size_gb: 1.6,
+            display_name: "Light: Gemma 2 2B + Qwen Coder 1.5B (~4.2 GB)".into(),
+            size_gb: 4.2,
             n_ctx: 2048,
             n_threads: 2,
         },
         Tier::Standard => ModelRecommendation {
-            display_name: "Gemma-2-9B-it abliterated (Q3_K_M)".into(),
-            size_gb: 3.8,
+            display_name: "Standard: Gemma 2 9B + Qwen Coder 7B (~14 GB)".into(),
+            size_gb: 14.0,
             n_ctx: 4096,
             n_threads: 4,
         },
         Tier::Pro => ModelRecommendation {
-            display_name: "Gemma-2-9B-it abliterated (Q4_K_M)".into(),
-            size_gb: 5.5,
+            display_name: "Pro: Gemma 2 9B Q5 + Qwen Coder 14B (~22 GB)".into(),
+            size_gb: 22.0,
             n_ctx: 4096,
             n_threads: 0, // 0 = auto (összes mag)
         },

@@ -699,11 +699,13 @@ export function ChatView({
                       },
                     ] as { v: SlotChoice; title: string; desc: string }[]
                   ).map((opt) => {
-                    // Disabled, ha a modell nincs letöltve.
-                    // Az AUTO és Eco mindig elérhető (Eco a kötelező alap).
-                    const missing =
-                      (opt.v === "brain" && setupStatus && !setupStatus.brainInstalled) ||
-                      (opt.v === "creative" && setupStatus && !setupStatus.creativeInstalled);
+                    // Disabled, ha a modell nincs letöltve a recommended_tier-en.
+                    // Az AUTO mindig elérhető (a router választ tier+slot szerint).
+                    const tier = setupStatus?.recommendedTier;
+                    const cell = setupStatus?.models.find(
+                      (m) => m.tier === tier && m.slot === opt.v,
+                    );
+                    const missing = setupStatus && opt.v !== "auto" && cell && !cell.installed;
                     return (
                       <button
                         key={opt.v}

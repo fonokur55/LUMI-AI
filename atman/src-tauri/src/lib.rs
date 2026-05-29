@@ -491,23 +491,74 @@ async fn akasha_chat(
     // mutat ha lecsökkent a tier).
     let _ = app.emit("akasha-perf-profile", &perf_profile);
 
-    // Megjegyzés: tier-specifikus fájl-csere a Fázis 3-ban jön majd, amikor
-    // a startup-wizard controlled módon újraindítja a router-t. Most a tier
-    // CSAK felhasználói figyelmeztetést + BLOCKED védelmet ad - a fájl maga
-    // marad a default (Pro tier).
-    let model_path = akasha_cfg.arsenal_file_path(&launch_root, &route.model_filename);
+    // === v0.1.3+ tier × slot modell-választás ===
+    //
+    // A route_prompt egy SLOT-ot ad vissza (Eco/Brain/Creative). Az
+    // effective_tier (Limp/Standard/Pro) a perf-profile-ból jön - ez a
+    // hardware-detektálás + a Settings-beli forced_tier override.
+    //
+    // A tényleges fájl: models/akasha/<tier>-<slot>.gguf (pl.
+    // standard-brain.gguf). A katalógusban ez a `local_filename()`.
+    //
+    // Ha az adott tier × slot fájl HIÁNYZIK: visszaesünk ugyanannak a
+    // tier-nek az Eco-jára (mert az Eco a kötelező alap minden tier-en).
+    // Ha még az sem létezik → tiszta hibajelzés.
+    use crate::downloader::Slot as DlSlot;
+    let dl_slot = match route.slot {
+        AkashaSlot::Eco => DlSlot::Eco,
+        AkashaSlot::Brain => DlSlot::Brain,
+        AkashaSlot::Creative => DlSlot::Creative,
+    };
+    let effective_tier = perf_profile.effective_tier;
+    let catalog_entry = crate::downloader::catalog::lookup(effective_tier, dl_slot);
+    let models_dir_resolved = akasha_cfg.models_dir_path(&launch_root);
+
+    let (model_path, model_filename) = if let Some(entry) = catalog_entry {
+        let fname = entry.local_filename();
+        let path = models_dir_resolved.join(&fname);
+        if path.exists() {
+            (path, fname)
+        } else {
+            // Fallback ugyanannak a tier-nek az Eco-jára
+            let eco = crate::downloader::catalog::lookup(effective_tier, DlSlot::Eco);
+            if let Some(eco_entry) = eco {
+                let eco_fname = eco_entry.local_filename();
+                let eco_path = models_dir_resolved.join(&eco_fname);
+                if eco_path.exists() {
+                    (eco_path, eco_fname)
+                } else {
+                    let err = format!(
+                        "Modell fájl hiányzik: {} (és az Eco fallback se érhető el). \
+                         Töltsd le a {} tier modelljeit a Beállításokból.",
+                        fname,
+                        crate::downloader::catalog::tier_key_for_filename(effective_tier),
+                    );
+                    let _ = app.emit("akasha-error", &err);
+                    return Err(err);
+                }
+            } else {
+                let err = format!("Modell fájl hiányzik: {fname}");
+                let _ = app.emit("akasha-error", &err);
+                return Err(err);
+            }
+        }
+    } else {
+        // Blocked tier vagy ismeretlen kombináció: visszaesünk a régi
+        // config.toml-os fájlnévre - elsősorban a v0.1.2-es telepítések
+        // visszafelé kompatibilitásához.
+        let path = akasha_cfg.arsenal_file_path(&launch_root, &route.model_filename);
+        (path, route.model_filename.clone())
+    };
     if !model_path.exists() {
         let err = format!(
-            "Modell fájl hiányzik: {}. Futtasd: scripts/fetch-akasha-arsenal.ps1",
-            route.model_filename
+            "Modell fájl hiányzik: {model_filename}. Töltsd le a Beállítások › Modellek menüben."
         );
         let _ = app.emit("akasha-error", &err);
         return Err(err);
     }
     if std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0) < 50_000_000 {
         let err = format!(
-            "Modell fájl sérült vagy hiányos (túl kicsi): {}. Töltsd le újra.",
-            route.model_filename
+            "Modell fájl sérült vagy hiányos (túl kicsi): {model_filename}. Töltsd le újra."
         );
         let _ = app.emit("akasha-error", &err);
         return Err(err);
@@ -515,10 +566,9 @@ async fn akasha_chat(
 
     // A llama-server router módja preset-néven kezeli a modelleket (kiterjesztés nélkül).
     // Ezt a nevet küldjük a /models/load és a /v1/chat/completions végpontokra is.
-    let model_preset = route
-        .model_filename
+    let model_preset = model_filename
         .strip_suffix(".gguf")
-        .unwrap_or(&route.model_filename)
+        .unwrap_or(&model_filename)
         .to_string();
 
     // #region agent log
@@ -890,20 +940,43 @@ fn memory_notes_delete(state: State<'_, AppState>, id: String) -> Result<(), Str
 //  FIRST-RUN DOWNLOADER (modellek + llama-server runtime)
 // ===========================================================================
 
+use akasha::perf::Tier as PerfTier;
+use downloader::Slot as DlSlot;
+
+/// Az aktuálisan érvényes (recommended) tier-t adja vissza a Settings-ben
+/// beállított `forced_tier`-t is figyelembe véve.
+fn effective_tier_from(
+    state: &State<'_, AppState>,
+) -> Result<PerfTier, String> {
+    let snap = {
+        let mut hw = state.hardware.lock().map_err(|e| e.to_string())?;
+        hw.snapshot()
+    };
+    let perf_cfg = state
+        .config
+        .lock()
+        .map_err(|e| e.to_string())?
+        .performance
+        .clone();
+    let profile = akasha::perf::compute_profile(
+        &snap,
+        perf_cfg.forced_tier.as_deref(),
+        perf_cfg.hardware_protection_enabled,
+    );
+    Ok(profile.effective_tier)
+}
+
 #[tauri::command]
 fn check_setup_status(
     state: State<'_, AppState>,
 ) -> Result<downloader::SetupStatus, String> {
-    let paths = state.paths.lock().map_err(|e| e.to_string())?;
-    let cfg = state.config.lock().map_err(|e| e.to_string())?;
-    let runtime_path = PathBuf::from(&paths.runtime_llama);
-    let models_dir = PathBuf::from(&paths.models_akasha);
+    let runtime_path = PathBuf::from(&state.paths.lock().map_err(|e| e.to_string())?.runtime_llama);
+    let models_dir = PathBuf::from(&state.paths.lock().map_err(|e| e.to_string())?.models_akasha);
+    let tier = effective_tier_from(&state)?;
     Ok(downloader::store::check_setup_status(
         &runtime_path,
         &models_dir,
-        &cfg.akasha.arsenal.eco,
-        &cfg.akasha.arsenal.brain,
-        &cfg.akasha.arsenal.creative,
+        tier,
     ))
 }
 
@@ -912,49 +985,58 @@ async fn check_online() -> bool {
     downloader::store::is_online().await
 }
 
-/// Letölti a megadott komponenst (`runtime` / `eco` / `brain` / `creative`).
-/// Progress event-eket emit-tál: `download-start`, `download-progress`,
-/// `download-done`. Ha a fájl már létezik (és teljes), azonnal `done`-t emit-ál.
+/// Letölti a runtime-ot (llama-server bináris).
 #[tauri::command]
-async fn download_component(
+async fn download_runtime(
     app: AppHandle,
     state: State<'_, AppState>,
-    component: String,
 ) -> Result<(), String> {
-    let (runtime_dir, models_dir, eco_file, brain_file, creative_file) = {
+    let runtime_dir = {
         let paths = state.paths.lock().map_err(|e| e.to_string())?;
-        let cfg = state.config.lock().map_err(|e| e.to_string())?;
         let runtime_path = PathBuf::from(&paths.runtime_llama);
-        // A runtime mappa az llama-server bináris szülő-mappája
-        let runtime_dir = runtime_path
+        runtime_path
             .parent()
             .map(|p| p.to_path_buf())
-            .ok_or_else(|| "Runtime path szülő-mappa hiba".to_string())?;
-        (
-            runtime_dir,
-            PathBuf::from(&paths.models_akasha),
-            cfg.akasha.arsenal.eco.clone(),
-            cfg.akasha.arsenal.brain.clone(),
-            cfg.akasha.arsenal.creative.clone(),
-        )
+            .ok_or_else(|| "Runtime path szülő-mappa hiba".to_string())?
     };
+    downloader::store::download_runtime(&app, runtime_dir).await
+}
 
-    match component.as_str() {
-        "runtime" => downloader::store::download_runtime(&app, runtime_dir).await,
-        slot @ ("eco" | "brain" | "creative") => {
-            let src = downloader::store::model_source(slot)
-                .ok_or_else(|| format!("Ismeretlen slot: {slot}"))?;
-            let filename = match slot {
-                "eco" => eco_file,
-                "brain" => brain_file,
-                "creative" => creative_file,
-                _ => unreachable!(),
-            };
-            let target = models_dir.join(filename);
-            downloader::store::download_model(&app, slot, target, src.repo, src.file).await
-        }
-        _ => Err(format!("Ismeretlen komponens: {component}")),
+/// Letölti egy konkrét tier × slot modellt.
+#[tauri::command]
+async fn download_tier_model(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tier: String,
+    slot: String,
+) -> Result<(), String> {
+    let models_dir = PathBuf::from(
+        &state.paths.lock().map_err(|e| e.to_string())?.models_akasha,
+    );
+    let tier_val = PerfTier::from_key(&tier)
+        .ok_or_else(|| format!("Ismeretlen tier: {tier}"))?;
+    let slot_val = DlSlot::from_key(&slot)
+        .ok_or_else(|| format!("Ismeretlen slot: {slot}"))?;
+    downloader::store::download_tier_model(&app, tier_val, slot_val, &models_dir).await
+}
+
+/// Letölti egy egész tier 3 modelljét egymás után (Eco, Brain, Creative).
+/// Progress event-eket emit-tál minden modellre.
+#[tauri::command]
+async fn download_tier_pack(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    tier: String,
+) -> Result<(), String> {
+    let models_dir = PathBuf::from(
+        &state.paths.lock().map_err(|e| e.to_string())?.models_akasha,
+    );
+    let tier_val = PerfTier::from_key(&tier)
+        .ok_or_else(|| format!("Ismeretlen tier: {tier}"))?;
+    for slot in [DlSlot::Eco, DlSlot::Brain, DlSlot::Creative] {
+        downloader::store::download_tier_model(&app, tier_val, slot, &models_dir).await?;
     }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1333,7 +1415,9 @@ pub fn run() {
             memory_notes_delete,
             check_setup_status,
             check_online,
-            download_component,
+            download_runtime,
+            download_tier_model,
+            download_tier_pack,
             profile_get,
             profile_update_name,
             profile_record_event,

@@ -223,15 +223,32 @@ export type MemoryNote = {
   updatedAt: string;
 };
 
+export type DlSlot = "eco" | "brain" | "creative";
+
+/** A 9-modelles tier × slot mátrix egy cellája. */
+export type ModelStatus = {
+  tier: PerfTier;
+  slot: DlSlot;
+  installed: boolean;
+  displayName: string;
+  sizeGb: number;
+};
+
+/** Az LUMI setup-állapota - runtime + a 9 modell-cella + ajánlott tier. */
 export type SetupStatus = {
   runtimeInstalled: boolean;
-  ecoInstalled: boolean;
-  brainInstalled: boolean;
-  creativeInstalled: boolean;
+  /** A hardware-detektálás alapján ajánlott tier (a Settings forced_tier-rel együtt). */
+  recommendedTier: PerfTier;
+  /** A 9 cella (3 tier × 3 slot) telepítettsége. */
+  models: ModelStatus[];
+  /** A KÖTELEZŐ minimum: runtime + a recommended_tier mindhárom modellje. */
   minimumReady: boolean;
 };
 
-export type DownloadComponent = "runtime" | "eco" | "brain" | "creative";
+/** A download-progress event component-mezője most már `<tier>-<slot>`
+ *  formátum (pl. "standard-brain"), illetve a runtime-é `"runtime"`.
+ */
+export type DownloadComponent = string;
 
 export type DownloadProgressEvent = {
   component: DownloadComponent;
@@ -296,11 +313,17 @@ export const api = {
   memoryNotesDelete: (id: string) =>
     invoke<void>("memory_notes_delete", { id }),
 
-  // Első indítási letöltő (modellek + llama-server runtime)
+  // Első indítási letöltő + Beállítások › Modellek (9-cellás)
   checkSetupStatus: () => invoke<SetupStatus>("check_setup_status"),
   checkOnline: () => invoke<boolean>("check_online"),
-  downloadComponent: (component: DownloadComponent) =>
-    invoke<void>("download_component", { component }),
+  /** A llama-server runtime letöltése (~30-46 MB). */
+  downloadRuntime: () => invoke<void>("download_runtime"),
+  /** Egy konkrét tier × slot modell letöltése (~1-9 GB). */
+  downloadTierModel: (tier: PerfTier, slot: DlSlot) =>
+    invoke<void>("download_tier_model", { tier, slot }),
+  /** Egy egész tier 3 modellje (Eco + Brain + Creative) egymás után. */
+  downloadTierPack: (tier: PerfTier) =>
+    invoke<void>("download_tier_pack", { tier }),
   profileGet: () => invoke<ProfileData>("profile_get"),
   profileUpdateName: (name: string) => invoke<void>("profile_update_name", { name }),
   profileRecordEvent: (kind: string) => invoke<void>("profile_record_event", { kind }),

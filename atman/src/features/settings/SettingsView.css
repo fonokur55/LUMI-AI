@@ -486,6 +486,46 @@
   color: #16a34a;
 }
 
+/* === Tier-block (Light/Standard/Pro) === */
+.settings-tier-block {
+  margin: 14px 0 10px;
+  padding: 12px 12px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.015);
+}
+.settings-tier-block.is-recommended {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.04);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
+}
+.settings-tier-block__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.settings-tier-block__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.settings-tier-block__badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-web, #3b82f6);
+  color: #ffffff;
+}
+
 /* ============================================================
    Context-méret csúszka (4k - 128k)
    ============================================================ */
