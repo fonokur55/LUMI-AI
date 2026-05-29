@@ -266,13 +266,18 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Elindítja a frissen telepített `atman.exe`-t. „Elindítás" gomb.
+/// Elindítja a frissen telepített `lumi.exe`-t. „Elindítás" gomb.
+/// Visszafelé kompatibilitás: ha valaki egy 0.1.0-ás portable ZIP-pel
+/// készült LUMI-t telepít, ott még `atman.exe` van — azt is megtalálja.
 #[tauri::command]
 fn launch_lumi(install_path: String) -> Result<(), String> {
-    let exe = PathBuf::from(&install_path).join("atman.exe");
-    if !exe.exists() {
-        return Err(format!("Nem található: {}", exe.display()));
-    }
+    let install = PathBuf::from(&install_path);
+    let candidates = ["lumi.exe", "atman.exe"];
+    let exe = candidates
+        .iter()
+        .map(|n| install.join(n))
+        .find(|p| p.exists())
+        .ok_or_else(|| format!("Nem található lumi.exe vagy atman.exe: {}", install.display()))?;
     std::process::Command::new(&exe)
         .current_dir(&install_path)
         .spawn()

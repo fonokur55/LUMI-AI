@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   api,
   type AtmanConfig,
+  type DownloadComponent,
+  type DownloadDoneEvent,
+  type DownloadProgressEvent,
   type HardwareProfile,
   type PerfTier,
+  type SetupStatus,
 } from "../../lib/api";
 import { showToast } from "../../components/Toast";
 import { MemoryNotesModal } from "../memory/MemoryNotesModal";
@@ -18,10 +23,31 @@ import "./SettingsView.css";
  *  - Sikeres mentés után rövid zöld "Mentve ✓" toast a képernyő tetején.
  *  - Szekciók tisztán elválasztva, prioritás szerint sorrendben.
  */
+type ModelDownloadState = {
+  status: "idle" | "downloading" | "extracting" | "error";
+  percent: number;
+  downloadedMb: number;
+  totalMb: number;
+  speedMbps: number;
+  error?: string;
+};
+
+const idleDownload = (): ModelDownloadState => ({
+  status: "idle",
+  percent: 0,
+  downloadedMb: 0,
+  totalMb: 0,
+  speedMbps: 0,
+});
+
 export function SettingsView() {
   const [config, setConfig] = useState<AtmanConfig | null>(null);
   const [profile, setProfile] = useState<HardwareProfile | null>(null);
   const [memoryModalOpen, setMemoryModalOpen] = useState(false);
+  // Modellek állapota a Beállítások › Modellek szekcióhoz
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [brainDl, setBrainDl] = useState<ModelDownloadState>(idleDownload);
+  const [creativeDl, setCreativeDl] = useState<ModelDownloadState>(idleDownload);
 
   // Auto-save debounce: az utolsó setConfig hívás után 500ms-mal mentünk.
   const saveTimerRef = useRef<number | null>(null);
@@ -34,11 +60,60 @@ export function SettingsView() {
     } catch (e) {
       console.error("profile load failed", e);
     }
+    try {
+      setSetupStatus(await api.checkSetupStatus());
+    } catch (e) {
+      console.error("setup status failed", e);
+    }
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Modell-letöltés progress event-ek a Beállítások szekcióhoz.
+  // (Független a First-run wizardtól; ha a user innen indít letöltést,
+  // a SAJÁT state-jeink frissülnek.)
+  useEffect(() => {
+    const unlistens: Array<() => void> = [];
+    const setterFor = (c: DownloadComponent) => {
+      if (c === "brain") return setBrainDl;
+      if (c === "creative") return setCreativeDl;
+      return null;
+    };
+    listen<DownloadProgressEvent>("download-progress", (event) => {
+      const set = setterFor(event.payload.component);
+      if (!set) return;
+      set((s) => ({
+        ...s,
+        status: "downloading",
+        percent: event.payload.percent,
+        downloadedMb: event.payload.downloadedBytes / 1_048_576,
+        totalMb: event.payload.totalBytes / 1_048_576,
+        speedMbps: event.payload.speedMbps,
+      }));
+    }).then((un) => unlistens.push(un));
+    listen<DownloadDoneEvent>("download-done", (event) => {
+      const set = setterFor(event.payload.component);
+      if (!set) return;
+      set(idleDownload);
+      // Frissítsük a setup-státuszt, hogy a "telepítve" jelzés frissüljön
+      api.checkSetupStatus().then(setSetupStatus).catch(() => {});
+      showToast("Modell letöltése kész");
+    }).then((un) => unlistens.push(un));
+    return () => unlistens.forEach((un) => un());
+  }, []);
+
+  const startModelDownload = async (slot: "brain" | "creative") => {
+    const setter = slot === "brain" ? setBrainDl : setCreativeDl;
+    setter((s) => ({ ...s, status: "downloading", percent: 0, error: undefined }));
+    try {
+      await api.downloadComponent(slot);
+    } catch (e) {
+      setter((s) => ({ ...s, status: "error", error: String(e) }));
+      showToast(`Letöltés sikertelen: ${e}`, "error", 4000);
+    }
+  };
 
   // Auto-save: amikor a config változik (felhasználói interakció miatt),
   // 500ms múlva elmentjük. Ha közben újra változik, a timer reset-elődik.
@@ -222,6 +297,38 @@ export function SettingsView() {
         <ContextSlider
           value={config.akasha.nCtx}
           onChange={(v) => updateAkasha({ nCtx: v })}
+        />
+      </section>
+
+      {/* ===== MODELLEK (Eco mindig kötelező; Brain és Creative opcionális) ===== */}
+      <section className="settings-card">
+        <h2>Modellek</h2>
+        <p className="settings-view__hint">
+          A LUMI motorja, AKASHA három modellt tud használni. Az{" "}
+          <strong>Eco</strong> a kötelező alap; a <strong>Brain</strong>{" "}
+          (kódolás, matematika) és a <strong>Creative</strong> (kreatív írás)
+          opcionális. <em>Ajánljuk az összes modell telepítését</em> a teljes
+          élményhez. Amíg nincsenek telepítve, a chat-választóban
+          kiválaszthatatlanok.
+        </p>
+
+        <ModelRow
+          label="Eco — gyors általános beszélgetés"
+          installed={!!setupStatus?.ecoInstalled}
+          required
+          locked
+        />
+        <ModelRow
+          label="Brain — kódolás, matematika"
+          installed={!!setupStatus?.brainInstalled}
+          dl={brainDl}
+          onDownload={() => startModelDownload("brain")}
+        />
+        <ModelRow
+          label="Creative — kreatív írás, történet"
+          installed={!!setupStatus?.creativeInstalled}
+          dl={creativeDl}
+          onDownload={() => startModelDownload("creative")}
         />
       </section>
 
@@ -431,6 +538,77 @@ function ThemeOption({
         </strong>
       </div>
     </button>
+  );
+}
+
+function ModelRow({
+  label,
+  installed,
+  required,
+  locked,
+  dl,
+  onDownload,
+}: {
+  label: string;
+  installed: boolean;
+  required?: boolean;
+  /** Locked = nincs "Letöltés" gomb (pl. az Eco-t a wizard tölti). */
+  locked?: boolean;
+  dl?: ModelDownloadState;
+  onDownload?: () => void;
+}) {
+  const downloading = dl?.status === "downloading";
+  return (
+    <div className={`settings-model-row ${installed ? "is-installed" : ""}`}>
+      <span className={`settings-model-row__icon ${installed ? "is-ok" : ""}`}>
+        {installed ? "✓" : downloading ? "⟳" : "○"}
+      </span>
+      <div className="settings-model-row__body">
+        <div className="settings-model-row__label">
+          {label}
+          {required && (
+            <span className="settings-model-row__badge">kötelező</span>
+          )}
+        </div>
+        {downloading && dl && (
+          <>
+            <div className="settings-model-row__bar">
+              <div
+                className="settings-model-row__bar-fill"
+                style={{ width: `${dl.percent}%` }}
+              />
+            </div>
+            <div className="settings-model-row__meta">
+              {dl.totalMb > 0 ? (
+                <>
+                  {dl.downloadedMb.toFixed(0)} / {dl.totalMb.toFixed(0)} MB
+                </>
+              ) : (
+                <>{dl.downloadedMb.toFixed(0)} MB</>
+              )}
+              {dl.speedMbps > 0 && <> · {dl.speedMbps.toFixed(1)} MB/s</>}
+            </div>
+          </>
+        )}
+        {dl?.status === "error" && (
+          <div className="settings-model-row__error">
+            Hiba: {dl.error}
+          </div>
+        )}
+      </div>
+      {!installed && !locked && !downloading && onDownload && (
+        <button
+          type="button"
+          className="settings-view__btn settings-model-row__btn"
+          onClick={onDownload}
+        >
+          Letöltés
+        </button>
+      )}
+      {installed && (
+        <span className="settings-model-row__status">Telepítve</span>
+      )}
+    </div>
   );
 }
 

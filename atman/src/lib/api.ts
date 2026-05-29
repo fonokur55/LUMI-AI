@@ -223,6 +223,28 @@ export type MemoryNote = {
   updatedAt: string;
 };
 
+export type SetupStatus = {
+  runtimeInstalled: boolean;
+  ecoInstalled: boolean;
+  brainInstalled: boolean;
+  creativeInstalled: boolean;
+  minimumReady: boolean;
+};
+
+export type DownloadComponent = "runtime" | "eco" | "brain" | "creative";
+
+export type DownloadProgressEvent = {
+  component: DownloadComponent;
+  percent: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  speedMbps: number;
+};
+
+export type DownloadDoneEvent = {
+  component: DownloadComponent;
+};
+
 export const api = {
   version: () => invoke<string>("app_version"),
   paths: () => invoke<AppPaths>("get_app_paths"),
@@ -273,6 +295,12 @@ export const api = {
     invoke<void>("memory_notes_toggle", { args: { id, enabled } }),
   memoryNotesDelete: (id: string) =>
     invoke<void>("memory_notes_delete", { id }),
+
+  // Első indítási letöltő (modellek + llama-server runtime)
+  checkSetupStatus: () => invoke<SetupStatus>("check_setup_status"),
+  checkOnline: () => invoke<boolean>("check_online"),
+  downloadComponent: (component: DownloadComponent) =>
+    invoke<void>("download_component", { component }),
   profileGet: () => invoke<ProfileData>("profile_get"),
   profileUpdateName: (name: string) => invoke<void>("profile_update_name", { name }),
   profileRecordEvent: (kind: string) => invoke<void>("profile_record_event", { kind }),

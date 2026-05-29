@@ -5,6 +5,7 @@ import {
   clearAkashaStreamHandlers,
   setAkashaStreamHandlers,
   type ChatMessage,
+  type SetupStatus,
   type SlotChoice,
 } from "../../lib/api";
 import { GenerationIndicator } from "./GenerationIndicator";
@@ -70,6 +71,8 @@ export function ChatView({
   const [slotChoice, setSlotChoice] = useState<SlotChoice>("auto");
   const [slotMenuOpen, setSlotMenuOpen] = useState(false);
   const slotMenuRef = useRef<HTMLDivElement>(null);
+  // Telepített modellek - a hiányzókat a slot-menüben disabled-é tesszük
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
 
   // Küldés-animáció flag - rövid kék gradient-hullám + glow a composer
   // körül, jelezve hogy elindult a kérés. Auto-feloldódik 1.5 mp után.
@@ -281,6 +284,17 @@ export function ChatView({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [input]);
+
+  // Telepített modellek lekérése - induláskor + amikor a slot-menüt
+  // megnyitja a user (hátha közben a Beállításokból letöltött egyet).
+  useEffect(() => {
+    api.checkSetupStatus().then(setSetupStatus).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (slotMenuOpen) {
+      api.checkSetupStatus().then(setSetupStatus).catch(() => {});
+    }
+  }, [slotMenuOpen]);
 
   // Slot-menü bezárása ha a felhasználó máshova kattint.
   useEffect(() => {
@@ -684,33 +698,52 @@ export function ChatView({
                         desc: "Történet, vers, kreatív írás",
                       },
                     ] as { v: SlotChoice; title: string; desc: string }[]
-                  ).map((opt) => (
-                    <button
-                      key={opt.v}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={slotChoice === opt.v}
-                      className={`chat-view__slot-item ${
-                        slotChoice === opt.v ? "is-active" : ""
-                      }`}
-                      onClick={() => {
-                        setSlotChoice(opt.v);
-                        setSlotMenuOpen(false);
-                      }}
-                    >
-                      <span className="chat-view__slot-item-title">
-                        {opt.title}
-                      </span>
-                      <span className="chat-view__slot-item-desc">
-                        {opt.desc}
-                      </span>
-                      {slotChoice === opt.v && (
-                        <span className="chat-view__slot-item-check" aria-hidden>
-                          ✓
+                  ).map((opt) => {
+                    // Disabled, ha a modell nincs letöltve.
+                    // Az AUTO és Eco mindig elérhető (Eco a kötelező alap).
+                    const missing =
+                      (opt.v === "brain" && setupStatus && !setupStatus.brainInstalled) ||
+                      (opt.v === "creative" && setupStatus && !setupStatus.creativeInstalled);
+                    return (
+                      <button
+                        key={opt.v}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={slotChoice === opt.v}
+                        className={`chat-view__slot-item ${
+                          slotChoice === opt.v ? "is-active" : ""
+                        } ${missing ? "is-missing" : ""}`}
+                        disabled={!!missing}
+                        title={
+                          missing
+                            ? "A modell még nincs telepítve. Töltsd le a Beállítások › Modellek menüből."
+                            : undefined
+                        }
+                        onClick={() => {
+                          if (missing) return;
+                          setSlotChoice(opt.v);
+                          setSlotMenuOpen(false);
+                        }}
+                      >
+                        <span className="chat-view__slot-item-title">
+                          {opt.title}
+                          {missing && (
+                            <span className="chat-view__slot-item-missing">
+                              Nincs telepítve
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </button>
-                  ))}
+                        <span className="chat-view__slot-item-desc">
+                          {opt.desc}
+                        </span>
+                        {slotChoice === opt.v && !missing && (
+                          <span className="chat-view__slot-item-check" aria-hidden>
+                            ✓
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

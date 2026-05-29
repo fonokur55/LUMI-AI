@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import { AppShell } from "./app/AppShell";
 import { FirstRunSetup } from "./components/FirstRunSetup";
+import { FirstRunDownload } from "./components/FirstRunDownload";
 import { ToastContainer } from "./components/Toast";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MemoryNotesModal } from "./features/memory/MemoryNotesModal";
-import { api } from "./lib/api";
+import { api, type SetupStatus } from "./lib/api";
 
 export default function App() {
   const [displayName, setDisplayName] = useState("");
@@ -22,6 +23,13 @@ export default function App() {
   // A first-run wizard 3. step-jén ("Mesélsz magadról?") "Igen" → ez a
   // state nyitja meg a memória-modalt onboarding közvetlen folytatásaként.
   const [memoryFromOnboarding, setMemoryFromOnboarding] = useState(false);
+  // Modell- és runtime-letöltő wizard - csak akkor látszik, ha a kötelező
+  // (Eco modell + llama-server) hiányzik. A name+birthday+memory UTÁN
+  // jelenik meg a flow-ban.
+  const [downloadStatus, setDownloadStatus] = useState<SetupStatus | null>(null);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  // Offline-eset: nincs net az első indításkor és kell letölteni
+  const [offlineError, setOfflineError] = useState(false);
 
   // Avatar (re)frissítés - a ProfileView ezt hívja meg mentés/törlés után,
   // hogy a sidebar avatarja is azonnal kövesse a változást.
@@ -105,8 +113,8 @@ export default function App() {
           setSetupOnlyBirthday(status.hasName && !status.hasBirthday);
           setSetupOpen(true);
         } else {
-          // A wizard kihagyva → ellenőrizzük rögtön a szülinapot
-          checkBirthdayAndCelebrate();
+          // Név + szülinap kész → ellenőrizzük a modellek + runtime állapotát
+          await maybeOpenDownloadWizard();
         }
       } catch (e) {
         console.error("setup status failed", e);
@@ -116,6 +124,37 @@ export default function App() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Ellenőrzi a modell + runtime állapotot. Ha a KÖTELEZŐ minimum (Eco
+   * modell + llama-server) hiányzik, megnyitja a FirstRunDownload wizardot.
+   * Ha minden megvan (vagy csak opcionális hiányzik), nem zavar.
+   *
+   * Hívási hely: a name+birthday+memory wizard után. Tehát a sorrend:
+   *   name → birthday → memory upsell → DOWNLOAD wizard → welcome
+   */
+  const maybeOpenDownloadWizard = async () => {
+    try {
+      const status = await api.checkSetupStatus();
+      setDownloadStatus(status);
+      if (!status.minimumReady) {
+        // Online check - ha nincs net, nem tudunk letölteni
+        const online = await api.checkOnline();
+        if (!online) {
+          setOfflineError(true);
+          return;
+        }
+        setDownloadOpen(true);
+      } else {
+        // Modellek kész → szülinap-check + welcome
+        checkBirthdayAndCelebrate();
+      }
+    } catch (e) {
+      console.error("setup status check failed", e);
+      // Ha valamiért nem tudjuk ellenőrizni, ne blokkoljuk az appot
+      checkBirthdayAndCelebrate();
+    }
+  };
 
   // A szülinap-vizsgálatot egy külön függvénybe szervezzük, hogy a first-run
   // bezárása után is meg tudjuk hívni (ha a user pont MA született).
@@ -168,13 +207,11 @@ export default function App() {
           setSetupOpen(false);
           if (openMemory) {
             // "Igen, vágjunk bele" → folytatás a memória-feltöltővel.
-            // A születésnap-konfettit ilyenkor halasztjuk, amíg a memória-
-            // modal bezárul, hogy ne ütközzön a felhasználói flow-val.
+            // A download-checket a memória-modal bezárása után végezzük.
             setMemoryFromOnboarding(true);
           } else {
-            // "Talán később" / X → egyenesen a welcome lapra; szülinap-check
-            // ha pont ma van.
-            checkBirthdayAndCelebrate();
+            // "Talán később" / X → download check (és aztán welcome)
+            maybeOpenDownloadWizard();
           }
         }}
       />
@@ -182,11 +219,55 @@ export default function App() {
         open={memoryFromOnboarding}
         onClose={() => {
           setMemoryFromOnboarding(false);
-          // A modal bezárása után - akár írt valamit, akár nem - jöhet a
-          // szülinap-check (ha pont ma van a user szülinapja).
-          checkBirthdayAndCelebrate();
+          // Memória-modal után: download-check, és ha minden kész, welcome
+          maybeOpenDownloadWizard();
         }}
       />
+      {downloadOpen && downloadStatus && (
+        <FirstRunDownload
+          status={downloadStatus}
+          onComplete={() => {
+            setDownloadOpen(false);
+            checkBirthdayAndCelebrate();
+          }}
+        />
+      )}
+      {offlineError && (
+        <div className="frd-backdrop" role="dialog" aria-modal="true">
+          <div className="frd-modal" style={{ maxWidth: 460 }}>
+            <div className="frd-hero">
+              <img
+                src="/brand/logo.png"
+                alt=""
+                className="frd-logo"
+                draggable={false}
+              />
+              <h1>Internet kell az első indításhoz</h1>
+              <p>
+                A LUMI első indításkor letölti az AKASHA motort és a kötelező
+                modellt (~2 GB). Ehhez aktív internetkapcsolat kell.
+                Csatlakozz, és indítsd újra az appot.
+              </p>
+            </div>
+            <div className="frd-actions">
+              <button
+                type="button"
+                className="frd-btn frd-btn--primary frd-btn--xl"
+                onClick={async () => {
+                  // Újraellenőrzés - hátha közben csatlakozott
+                  const online = await api.checkOnline();
+                  if (online) {
+                    setOfflineError(false);
+                    setDownloadOpen(true);
+                  }
+                }}
+              >
+                Újrapróbálás
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <AppShell
         displayName={displayName}
         onNameChange={setDisplayName}

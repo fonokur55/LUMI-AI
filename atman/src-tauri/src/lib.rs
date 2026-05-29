@@ -1,5 +1,6 @@
 mod akasha;
 mod chats;
+mod downloader;
 mod memory;
 mod memory_notes;
 mod portable;
@@ -885,6 +886,77 @@ fn memory_notes_delete(state: State<'_, AppState>, id: String) -> Result<(), Str
     with_memory_notes(&state, |s| s.delete(&id))
 }
 
+// ===========================================================================
+//  FIRST-RUN DOWNLOADER (modellek + llama-server runtime)
+// ===========================================================================
+
+#[tauri::command]
+fn check_setup_status(
+    state: State<'_, AppState>,
+) -> Result<downloader::SetupStatus, String> {
+    let paths = state.paths.lock().map_err(|e| e.to_string())?;
+    let cfg = state.config.lock().map_err(|e| e.to_string())?;
+    let runtime_path = PathBuf::from(&paths.runtime_llama);
+    let models_dir = PathBuf::from(&paths.models_akasha);
+    Ok(downloader::store::check_setup_status(
+        &runtime_path,
+        &models_dir,
+        &cfg.akasha.arsenal.eco,
+        &cfg.akasha.arsenal.brain,
+        &cfg.akasha.arsenal.creative,
+    ))
+}
+
+#[tauri::command]
+async fn check_online() -> bool {
+    downloader::store::is_online().await
+}
+
+/// Letölti a megadott komponenst (`runtime` / `eco` / `brain` / `creative`).
+/// Progress event-eket emit-tál: `download-start`, `download-progress`,
+/// `download-done`. Ha a fájl már létezik (és teljes), azonnal `done`-t emit-ál.
+#[tauri::command]
+async fn download_component(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    component: String,
+) -> Result<(), String> {
+    let (runtime_dir, models_dir, eco_file, brain_file, creative_file) = {
+        let paths = state.paths.lock().map_err(|e| e.to_string())?;
+        let cfg = state.config.lock().map_err(|e| e.to_string())?;
+        let runtime_path = PathBuf::from(&paths.runtime_llama);
+        // A runtime mappa az llama-server bináris szülő-mappája
+        let runtime_dir = runtime_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| "Runtime path szülő-mappa hiba".to_string())?;
+        (
+            runtime_dir,
+            PathBuf::from(&paths.models_akasha),
+            cfg.akasha.arsenal.eco.clone(),
+            cfg.akasha.arsenal.brain.clone(),
+            cfg.akasha.arsenal.creative.clone(),
+        )
+    };
+
+    match component.as_str() {
+        "runtime" => downloader::store::download_runtime(&app, runtime_dir).await,
+        slot @ ("eco" | "brain" | "creative") => {
+            let src = downloader::store::model_source(slot)
+                .ok_or_else(|| format!("Ismeretlen slot: {slot}"))?;
+            let filename = match slot {
+                "eco" => eco_file,
+                "brain" => brain_file,
+                "creative" => creative_file,
+                _ => unreachable!(),
+            };
+            let target = models_dir.join(filename);
+            downloader::store::download_model(&app, slot, target, src.repo, src.file).await
+        }
+        _ => Err(format!("Ismeretlen komponens: {component}")),
+    }
+}
+
 #[tauri::command]
 fn profile_get(state: State<'_, AppState>) -> Result<profile::db::ProfileData, String> {
     let chunks = state
@@ -1259,6 +1331,9 @@ pub fn run() {
             memory_notes_update,
             memory_notes_toggle,
             memory_notes_delete,
+            check_setup_status,
+            check_online,
+            download_component,
             profile_get,
             profile_update_name,
             profile_record_event,

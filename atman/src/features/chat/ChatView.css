@@ -742,6 +742,27 @@ html:not([data-theme="light"]) .chat-view__disclaimer {
   font-weight: 700;
 }
 
+/* Disabled slot-item - nincs telepítve a modell. A user a tooltip
+   alapján tudja hogy hol töltheti le (Beállítások › Modellek). */
+.chat-view__slot-item.is-missing {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chat-view__slot-item.is-missing:hover {
+  background: transparent;
+}
+.chat-view__slot-item-missing {
+  margin-left: 8px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
 /* Web-status pill - a generation indicator FÖLÖTT jelenik meg amíg a
    keresés fut, vagy 3 mp-ig a találatok érkezése után. */
 .chat-view__web-status {

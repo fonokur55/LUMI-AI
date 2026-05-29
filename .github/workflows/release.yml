@@ -120,7 +120,15 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart("v")
           $stage = "release-staging/LUMI-$version-portable"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item "src-tauri/target/release/atman.exe" -Destination "$stage/atman.exe"
+          # A binárisnév most már `lumi.exe` (Cargo.toml `name = "lumi"`),
+          # de fallback-elve a régi `atman.exe`-re, ha valaki régebbi
+          # branch-ról build-el.
+          $exe = if (Test-Path "src-tauri/target/release/lumi.exe") {
+            "src-tauri/target/release/lumi.exe"
+          } else {
+            "src-tauri/target/release/atman.exe"
+          }
+          Copy-Item $exe -Destination "$stage/lumi.exe"
           Compress-Archive -Path "$stage/*" `
             -DestinationPath "release-staging/LUMI-$version-windows-x64-portable.zip"
 
@@ -156,7 +164,12 @@ jobs:
             cp "$appimage" "$stage/LUMI.AppImage"
             chmod +x "$stage/LUMI.AppImage"
           else
-            cp "src-tauri/target/release/atman" "$stage/"
+            # Bináris neve `lumi` (új Cargo.toml) vagy `atman` (régi) - mindkettőt megpróbáljuk
+            if [ -f "src-tauri/target/release/lumi" ]; then
+              cp "src-tauri/target/release/lumi" "$stage/"
+            else
+              cp "src-tauri/target/release/atman" "$stage/"
+            fi
           fi
           (cd release-staging && tar -czf "LUMI-$version-linux-x64-portable.tar.gz" "LUMI-$version-portable")
 
