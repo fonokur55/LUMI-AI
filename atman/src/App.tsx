@@ -25,11 +25,10 @@ export default function App() {
   const [memoryFromOnboarding, setMemoryFromOnboarding] = useState(false);
   // Modell- és runtime-letöltő wizard - csak akkor látszik, ha a kötelező
   // (Eco modell + llama-server) hiányzik. A name+birthday+memory UTÁN
-  // jelenik meg a flow-ban.
+  // jelenik meg a flow-ban. Az offline-kezelés a wizard saját error-state-jén
+  // keresztül történik (nem a UI tetején külön modal-ban).
   const [downloadStatus, setDownloadStatus] = useState<SetupStatus | null>(null);
   const [downloadOpen, setDownloadOpen] = useState(false);
-  // Offline-eset: nincs net az első indításkor és kell letölteni
-  const [offlineError, setOfflineError] = useState(false);
 
   // Avatar (re)frissítés - a ProfileView ezt hívja meg mentés/törlés után,
   // hogy a sidebar avatarja is azonnal kövesse a változást.
@@ -132,18 +131,18 @@ export default function App() {
    *
    * Hívási hely: a name+birthday+memory wizard után. Tehát a sorrend:
    *   name → birthday → memory upsell → DOWNLOAD wizard → welcome
+   *
+   * MEGJEGYZÉS: korábban itt volt egy `api.checkOnline()` előcheck, ami
+   * a GitHub API HEAD-jét próbálta, de az 405 Method Not Allowed-et ad
+   * akkor is ha van net - false-negative-ot eredményezett. Helyette a
+   * wizardot MINDIG megnyitjuk, és ha a letöltés fail-el, a wizard saját
+   * error-fallback-je kezeli (Újrapróbálás gomb + hibajelzés).
    */
   const maybeOpenDownloadWizard = async () => {
     try {
       const status = await api.checkSetupStatus();
       setDownloadStatus(status);
       if (!status.minimumReady) {
-        // Online check - ha nincs net, nem tudunk letölteni
-        const online = await api.checkOnline();
-        if (!online) {
-          setOfflineError(true);
-          return;
-        }
         setDownloadOpen(true);
       } else {
         // Modellek kész → szülinap-check + welcome
@@ -231,42 +230,6 @@ export default function App() {
             checkBirthdayAndCelebrate();
           }}
         />
-      )}
-      {offlineError && (
-        <div className="frd-backdrop" role="dialog" aria-modal="true">
-          <div className="frd-modal" style={{ maxWidth: 460 }}>
-            <div className="frd-hero">
-              <img
-                src="/brand/logo.png"
-                alt=""
-                className="frd-logo"
-                draggable={false}
-              />
-              <h1>Internet kell az első indításhoz</h1>
-              <p>
-                A LUMI első indításkor letölti az AKASHA motort és a kötelező
-                modellt (~2 GB). Ehhez aktív internetkapcsolat kell.
-                Csatlakozz, és indítsd újra az appot.
-              </p>
-            </div>
-            <div className="frd-actions">
-              <button
-                type="button"
-                className="frd-btn frd-btn--primary frd-btn--xl"
-                onClick={async () => {
-                  // Újraellenőrzés - hátha közben csatlakozott
-                  const online = await api.checkOnline();
-                  if (online) {
-                    setOfflineError(false);
-                    setDownloadOpen(true);
-                  }
-                }}
-              >
-                Újrapróbálás
-              </button>
-            </div>
-          </div>
-        </div>
       )}
       <AppShell
         displayName={displayName}

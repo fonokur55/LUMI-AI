@@ -208,6 +208,11 @@
   flex-direction: column;
   gap: 8px;
 }
+.frd-error-hint {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
 [data-theme="dark"] .frd-error {
   color: #fca5a5;
 }

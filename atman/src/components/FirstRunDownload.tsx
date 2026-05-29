@@ -251,12 +251,16 @@ export function FirstRunDownload({ status, onComplete }: Props) {
 
             {error && (
               <div className="frd-error">
-                <strong>Hiba:</strong> {error}
+                <strong>Hiba a letöltésnél:</strong> {error}
+                <p className="frd-error-hint">
+                  Ellenőrizd az internetkapcsolatot, és próbáld újra.
+                </p>
                 <button
                   type="button"
                   className="frd-btn"
                   onClick={() => {
                     startedRef.current = false;
+                    setError(null);
                     startMandatory();
                   }}
                 >
