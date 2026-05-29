@@ -253,48 +253,44 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           repo_url="https://github.com/${{ github.repository }}"
+          entries=()
 
-          # Per-platform sig + URL kiszedése
-          declare -A platforms
+          # Helper: ha létezik egy `*.sig` mintára illő updater csomag a
+          # release-final/-ban, hozzáfűz egy platform-bejegyzést az
+          # `entries` tömbhöz. `find` kerüli az üres-glob/pipefail
+          # csapdát; nem-talált esetben üresen tér vissza, lépő nélkül.
+          add_platform() {
+            local key=$1 pattern=$2
+            local zip sig file_sig
+            zip=$(find release-final -maxdepth 1 -name "$pattern" -not -name '*.sig' -print -quit)
+            [ -n "$zip" ] || return 0
+            sig="${zip}.sig"
+            [ -f "$sig" ] || return 0
+            file_sig=$(tr -d '\n' < "$sig")
+            entries+=("    \"$key\": { \"signature\": \"$file_sig\", \"url\": \"${repo_url}/releases/download/${GITHUB_REF_NAME}/$(basename "$zip")\" }")
+          }
 
-          # Windows
-          win_zip=$(ls release-final/*_x64-setup.nsis.zip 2>/dev/null | grep -v sig | head -1)
-          win_sig=$(ls release-final/*_x64-setup.nsis.zip.sig 2>/dev/null | head -1)
-          if [ -n "$win_zip" ] && [ -n "$win_sig" ]; then
-            platforms[windows-x86_64]="$(cat "$win_sig" | tr -d '\n')|${repo_url}/releases/download/${GITHUB_REF_NAME}/$(basename "$win_zip")"
-          fi
+          add_platform "windows-x86_64" "*_x64-setup.nsis.zip"
+          # macOS universal - mind aarch64, mind x86_64 ugyanazt használja
+          add_platform "darwin-aarch64" "*.app.tar.gz"
+          add_platform "darwin-x86_64"  "*.app.tar.gz"
+          add_platform "linux-x86_64"   "*.AppImage.tar.gz"
 
-          # macOS - universal binary; mind aarch64 és x86_64 ugyanazt használja
-          mac_zip=$(ls release-final/*.app.tar.gz 2>/dev/null | grep -v sig | head -1)
-          mac_sig=$(ls release-final/*.app.tar.gz.sig 2>/dev/null | head -1)
-          if [ -n "$mac_zip" ] && [ -n "$mac_sig" ]; then
-            mac_data="$(cat "$mac_sig" | tr -d '\n')|${repo_url}/releases/download/${GITHUB_REF_NAME}/$(basename "$mac_zip")"
-            platforms[darwin-aarch64]="$mac_data"
-            platforms[darwin-x86_64]="$mac_data"
-          fi
-
-          # Linux
-          lin_zip=$(ls release-final/*.AppImage.tar.gz 2>/dev/null | grep -v sig | head -1)
-          lin_sig=$(ls release-final/*.AppImage.tar.gz.sig 2>/dev/null | head -1)
-          if [ -n "$lin_zip" ] && [ -n "$lin_sig" ]; then
-            platforms[linux-x86_64]="$(cat "$lin_sig" | tr -d '\n')|${repo_url}/releases/download/${GITHUB_REF_NAME}/$(basename "$lin_zip")"
-          fi
-
-          # JSON felépítés
+          # JSON összerakás - az entries vesszővel összefűzve
           {
             echo "{"
             echo "  \"version\": \"$version\","
             echo "  \"notes\": \"LUMI $version\","
             echo "  \"pub_date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
             echo "  \"platforms\": {"
-            first=true
-            for key in "${!platforms[@]}"; do
-              IFS='|' read -r sig url <<< "${platforms[$key]}"
-              [ "$first" = "true" ] || echo ","
-              echo -n "    \"$key\": { \"signature\": \"$sig\", \"url\": \"$url\" }"
-              first=false
+            last=$(( ${#entries[@]} - 1 ))
+            for i in "${!entries[@]}"; do
+              if [ "$i" -lt "$last" ]; then
+                echo "${entries[$i]},"
+              else
+                echo "${entries[$i]}"
+              fi
             done
-            echo ""
             echo "  }"
             echo "}"
           } > release-final/latest.json
