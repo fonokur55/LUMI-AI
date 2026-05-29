@@ -89,8 +89,10 @@ impl SetupStatus {
 /// Akkor tekintünk egy modell-fájlt "telepítettnek", ha legalább 50 MB
 /// (sérült/részleges letöltés kiszűrése).
 const MODEL_MIN_BYTES: u64 = 50_000_000;
-/// A llama-server bináris is legalább ekkora kell legyen.
-const RUNTIME_MIN_BYTES: u64 = 10_000_000;
+/// A llama-server bináris is legalább ekkora kell legyen. Pár száz KB-os
+/// nagyon kicsi - a tényleges llama-server.exe Windows-on általában 1-3 MB,
+/// macOS/Linux-on 5-10 MB. 500 KB egy konzervatív alsó küszöb.
+const RUNTIME_MIN_BYTES: u64 = 500_000;
 
 fn file_at_least(path: &Path, min_bytes: u64) -> bool {
     std::fs::metadata(path)
@@ -403,6 +405,7 @@ fn extract_zip_runtime(zip_path: &Path, runtime_dir: &Path) -> Result<(), String
             .map_err(|e| format!("Írási hiba ({}): {e}", out_path.display()))?;
         std::io::copy(&mut entry, &mut out_file)
             .map_err(|e| format!("Kicsomagolási hiba: {e}"))?;
+        drop(out_file);
 
         // Unix-on a llama-server-nek futtathatónak kell lennie.
         #[cfg(unix)]
@@ -414,6 +417,15 @@ fn extract_zip_runtime(zip_path: &Path, runtime_dir: &Path) -> Result<(), String
                     std::fs::Permissions::from_mode(0o755),
                 );
             }
+        }
+
+        // macOS Gatekeeper fix - lásd extract_tar_gz_runtime kommentjét
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("xattr")
+                .args(["-d", "com.apple.quarantine"])
+                .arg(&out_path)
+                .output();
         }
     }
     Ok(())
@@ -485,6 +497,7 @@ fn extract_tar_gz_runtime(tar_gz_path: &Path, runtime_dir: &Path) -> Result<(), 
             .map_err(|e| format!("Írási hiba ({}): {e}", out_path.display()))?;
         std::io::copy(&mut entry, &mut out_file)
             .map_err(|e| format!("Tar kicsomagolási hiba: {e}"))?;
+        drop(out_file); // Zárjuk be a file-handle-t mielőtt chmod/xattr
 
         // Unix-on a llama-server-nek futtathatónak kell lennie
         #[cfg(unix)]
@@ -496,6 +509,24 @@ fn extract_tar_gz_runtime(tar_gz_path: &Path, runtime_dir: &Path) -> Result<(), 
                     std::fs::Permissions::from_mode(0o755),
                 );
             }
+        }
+
+        // macOS Gatekeeper fix: az tar.gz-ből kibontott binárisok és
+        // dylib-ek automatikusan `com.apple.quarantine` extended attribute-ot
+        // kapnak, ami megakadályozza a futtatást ("nem ellenőrzött fejlesztő"
+        // hibával vagy csendes-fail SIGKILL-lel). Ezt el kell távolítani.
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("xattr")
+                .args(["-d", "com.apple.quarantine"])
+                .arg(&out_path)
+                .output();
+            // Plusz a com.apple.metadata:kMDItemWhereFroms-t is, hogy
+            // a Finder se mondja "letöltött a netről":
+            let _ = std::process::Command::new("xattr")
+                .args(["-d", "com.apple.metadata:kMDItemWhereFroms"])
+                .arg(&out_path)
+                .output();
         }
     }
     Ok(())

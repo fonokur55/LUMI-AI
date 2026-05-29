@@ -986,6 +986,12 @@ async fn check_online() -> bool {
 }
 
 /// Letölti a runtime-ot (llama-server bináris).
+///
+/// FONTOS: Windows-on a futó llama-server.exe fogja a `ggml-base.dll` és
+/// más DLL-eket. Mielőtt a letöltés-flow felülírja őket, le kell állítani
+/// a futó AKASHA-t, hogy az OS feloldja a fájl-zárolásokat (különben
+/// `os error 32` jönne). A leállítás + 2 mp várakozás elég ahhoz, hogy
+/// a process valóban kilépjen és a Windows engedje a fájl-cserét.
 #[tauri::command]
 async fn download_runtime(
     app: AppHandle,
@@ -999,6 +1005,12 @@ async fn download_runtime(
             .map(|p| p.to_path_buf())
             .ok_or_else(|| "Runtime path szülő-mappa hiba".to_string())?
     };
+    // 1. Állítsuk le a futó AKASHA-t (ha van)
+    state.akasha.stop();
+    state.throttle.set_child_pid(None);
+    // 2. Várjunk 2 mp-et hogy az OS feloldja a DLL-zárolásokat
+    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+    // 3. Letöltés és kicsomagolás
     downloader::store::download_runtime(&app, runtime_dir).await
 }
 
