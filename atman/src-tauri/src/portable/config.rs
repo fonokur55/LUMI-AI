@@ -3,15 +3,29 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// v0.2.0 arsenal: 3 fix expert (Szöveg / Logika / Kód).
+///
+/// A régi `eco/brain/creative` mezők is megmaradtak deszerializálható
+/// alias-ként, hogy a v0.1.x-ből frissítő felhasználók config.toml-ja
+/// se crash-eljen — egyszerűen figyelmen kívül hagyjuk a régi értékeket
+/// (úgyis új fájlnevek és új modellek vannak).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AkashaArsenalConfig {
-    #[serde(default = "default_eco_file")]
-    pub eco: String,
-    #[serde(default = "default_brain_file")]
-    pub brain: String,
-    #[serde(default = "default_creative_file")]
-    pub creative: String,
+    #[serde(default = "default_szoveg_file")]
+    pub szoveg: String,
+    #[serde(default = "default_logika_file")]
+    pub logika: String,
+    #[serde(default = "default_kod_file")]
+    pub kod: String,
+    /// v0.1.x legacy mezők - elnyelés, hogy a régi config ne hibázzon.
+    /// Ezeket NEM használjuk semmire a v0.2.0+ kódban.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eco: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub creative: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,9 +190,12 @@ impl Default for AtmanConfig {
 impl Default for AkashaArsenalConfig {
     fn default() -> Self {
         Self {
-            eco: default_eco_file(),
-            brain: default_brain_file(),
-            creative: default_creative_file(),
+            szoveg: default_szoveg_file(),
+            logika: default_logika_file(),
+            kod: default_kod_file(),
+            eco: None,
+            brain: None,
+            creative: None,
         }
     }
 }
@@ -236,14 +253,17 @@ fn default_models_dir() -> String {
 fn default_models_max() -> u32 {
     1
 }
-fn default_eco_file() -> String {
-    "eco.Q4_K_M.gguf".into()
+// v0.2.0 default arsenal fájlnevek - tiszta `<slot>.gguf` séma,
+// nincs többé tier-prefix vagy quant-suffix. A fájlnév stabil; a mögötte
+// lévő konkrét modell a `downloader::catalog::CATALOG`-ban változhat.
+fn default_szoveg_file() -> String {
+    "szoveg.gguf".into()
 }
-fn default_brain_file() -> String {
-    "brain.Q4_K_M.gguf".into()
+fn default_logika_file() -> String {
+    "logika.gguf".into()
 }
-fn default_creative_file() -> String {
-    "creative.Q4_K_M.gguf".into()
+fn default_kod_file() -> String {
+    "kod.gguf".into()
 }
 fn default_ram_warning() -> u64 {
     2048
@@ -282,15 +302,82 @@ fn default_name() -> String {
     "felhasználó".into()
 }
 
+/// v0.2.0 first-run migráció + bundled-modell telepítés.
+///
+/// HÁROM dolgot kezel egyetlen hívással:
+///
+///   1. **Bundled Szöveg modell kicsomagolása**: ha a telepítő tartalmaz
+///      egy `resources/szoveg.gguf`-ot (Tauri bundle resource), és a
+///      `models/akasha/szoveg.gguf` még nincs meg, akkor átmásolja oda.
+///      Ezzel a user telepítés UTÁN azonnal chat-elhet a Szöveg expert-tel
+///      letöltési várakozás nélkül.
+///
+///   2. **Régi v0.1.x slot-fájlok megőrzése**: a régi `{tier}-{slot}.gguf`
+///      fájlokat NEM töröljük — a user manuálisan kitakaríthatja a
+///      Beállítások › Modellek menüből (későbbi feature). Csak az új
+///      `szoveg/logika/kod.gguf` fájlokra koncentrálunk.
+///
+///   3. **Legacy `akasha-moe.Q4_K_M.gguf` (v0.0.x maradványa)**: ha még
+///      megvan a régi-régi monolitikus fájl, ezt sem bántjuk — nem hivatkozunk
+///      rá többé.
 pub fn migrate_eco_model(launch_root: &Path) {
-    let dir = launch_root.join("models").join("akasha");
-    let eco = dir.join(default_eco_file());
-    if eco.exists() {
+    let models_dir = launch_root.join("models").join("akasha");
+    if let Err(e) = fs::create_dir_all(&models_dir) {
+        crate::debug_log::dlog(
+            "config.rs:migrate_eco_model",
+            "H1",
+            "models_dir mkdir failed",
+            serde_json::json!({ "error": e.to_string() }),
+        );
         return;
     }
-    let legacy = dir.join("akasha-moe.Q4_K_M.gguf");
-    if legacy.exists() {
-        let _ = fs::copy(&legacy, &eco);
+
+    let target = models_dir.join("szoveg.gguf");
+    if target.exists() {
+        return;
+    }
+
+    // Bundled Szöveg keresés — a Tauri bundle "resources" mappa különböző
+    // OS-eken eltérő helyre kerül; több jelölt path-on is megpróbáljuk.
+    let candidates = [
+        // Windows + Linux: a binárissal egy szinten van a resources/ mappa
+        launch_root.join("resources").join("szoveg.gguf"),
+        // macOS .app bundle: Contents/Resources/
+        launch_root.join("..").join("Resources").join("szoveg.gguf"),
+        // Fallback: közvetlenül a launch_root mellé téve
+        launch_root.join("szoveg.gguf"),
+    ];
+
+    for src in &candidates {
+        if !src.exists() || !src.is_file() {
+            continue;
+        }
+        match fs::copy(src, &target) {
+            Ok(bytes) => {
+                crate::debug_log::dlog(
+                    "config.rs:migrate_eco_model",
+                    "H1",
+                    "bundled szoveg telepítve",
+                    serde_json::json!({
+                        "src": src.display().to_string(),
+                        "dst": target.display().to_string(),
+                        "bytes": bytes,
+                    }),
+                );
+                return;
+            }
+            Err(e) => {
+                crate::debug_log::dlog(
+                    "config.rs:migrate_eco_model",
+                    "H1",
+                    "bundled szoveg copy failed",
+                    serde_json::json!({
+                        "src": src.display().to_string(),
+                        "error": e.to_string(),
+                    }),
+                );
+            }
+        }
     }
 }
 

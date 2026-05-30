@@ -26,6 +26,13 @@ use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+/// v0.2.0 helper: a Tauri commandok közös bizniszében sok helyen kellene
+/// kiszámolni hogy egy adott slot-hoz milyen fájl tartozik. Ez itt egyhelyes:
+/// SZÖVEG → szoveg.gguf, LOGIKA → logika.gguf, KÓD → kod.gguf
+fn slot_to_filename(slot: AkashaSlot) -> String {
+    format!("{}.gguf", slot.key())
+}
+
 #[tauri::command]
 fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
@@ -178,7 +185,7 @@ async fn ensure_akasha_running(
 
     // #region agent log
     let resolved_models_dir = cfg.models_dir_path(&launch_root);
-    let eco_resolved = cfg.arsenal_file_path(&launch_root, &cfg.arsenal.eco);
+    let szoveg_resolved = cfg.arsenal_file_path(&launch_root, &cfg.arsenal.szoveg);
     debug_log::dlog(
         "lib.rs:ensure_akasha_running",
         "H1",
@@ -190,11 +197,11 @@ async fn ensure_akasha_running(
             "models_dir_raw": cfg.models_dir,
             "models_dir_resolved": resolved_models_dir.display().to_string(),
             "models_dir_resolved_exists": resolved_models_dir.exists(),
-            "arsenal_eco": cfg.arsenal.eco,
-            "arsenal_brain": cfg.arsenal.brain,
-            "arsenal_creative": cfg.arsenal.creative,
-            "eco_resolved": eco_resolved.display().to_string(),
-            "eco_exists": eco_resolved.exists(),
+            "arsenal_szoveg": cfg.arsenal.szoveg,
+            "arsenal_logika": cfg.arsenal.logika,
+            "arsenal_kod": cfg.arsenal.kod,
+            "szoveg_resolved": szoveg_resolved.display().to_string(),
+            "szoveg_exists": szoveg_resolved.exists(),
             "host": cfg.host,
             "port_cfg": cfg.port,
             "n_ctx": cfg.n_ctx,
@@ -303,15 +310,11 @@ struct AkashaChatArgs {
     chat_title: Option<String>,
 }
 
-/// "eco" / "brain" / "creative" → `AkashaSlot`. Bármi mást None-ként
-/// kezelünk (visszaesés AUTO-ra).
+/// "szoveg" / "logika" / "kod" → `AkashaSlot` (+ visszafelé kompatibilitás
+/// a v0.1.x "eco"/"brain"/"creative" kulcsokkal a régi UI-kérésekre).
+/// Bármi mást None-ként kezelünk (visszaesés AUTO-ra).
 fn parse_force_slot(s: Option<&str>) -> Option<AkashaSlot> {
-    match s.map(|s| s.to_lowercase()).as_deref() {
-        Some("eco") => Some(AkashaSlot::Eco),
-        Some("brain") => Some(AkashaSlot::Brain),
-        Some("creative") => Some(AkashaSlot::Creative),
-        _ => None,
-    }
+    s.and_then(|key| AkashaSlot::from_key(key))
 }
 
 #[tauri::command]
@@ -406,19 +409,13 @@ async fn akasha_chat(
         )
     };
 
-    // Ha a felhasználó a UI-ban manuálisan választott slotot ("eco" / "brain"
-    // / "creative"), MINDIG azt használjuk, kihagyva a keyword-routert.
-    // Csak ha "AUTO" (None) van, hívjuk a route_prompt-ot.
+    // Ha a felhasználó a UI-ban manuálisan választott slotot, MINDIG azt
+    // használjuk. Ha "AUTO" (None), a route_prompt kulcsszó alapján dönt.
     let forced = parse_force_slot(payload.force_slot.as_deref());
     let route = if let Some(slot) = forced {
-        let model_filename = match slot {
-            AkashaSlot::Eco => akasha_cfg.arsenal.eco.clone(),
-            AkashaSlot::Brain => akasha_cfg.arsenal.brain.clone(),
-            AkashaSlot::Creative => akasha_cfg.arsenal.creative.clone(),
-        };
         akasha::router::RouteResult {
             slot,
-            model_filename,
+            model_filename: slot_to_filename(slot),
             // A manuális választást nem írjuk felül a resource-throttling-gal -
             // a user explicit kérése felülír mindent.
             resource_limited: false,
@@ -491,78 +488,66 @@ async fn akasha_chat(
     // mutat ha lecsökkent a tier).
     let _ = app.emit("akasha-perf-profile", &perf_profile);
 
-    // === v0.1.3+ tier × slot modell-választás ===
+    // === v0.2.0 expert-választás ===
     //
-    // A route_prompt egy SLOT-ot ad vissza (Eco/Brain/Creative). Az
-    // effective_tier (Limp/Standard/Pro) a perf-profile-ból jön - ez a
-    // hardware-detektálás + a Settings-beli forced_tier override.
+    // Nincs többé tier × slot mátrix. A route.slot (Szöveg/Logika/Kód)
+    // egy az egyben mappelődik a `models/akasha/<slot>.gguf` fájlra.
     //
-    // A tényleges fájl: models/akasha/<tier>-<slot>.gguf (pl.
-    // standard-brain.gguf). A katalógusban ez a `local_filename()`.
-    //
-    // Ha az adott tier × slot fájl HIÁNYZIK: visszaesünk ugyanannak a
-    // tier-nek az Eco-jára (mert az Eco a kötelező alap minden tier-en).
-    // Ha még az sem létezik → tiszta hibajelzés.
-    use crate::downloader::Slot as DlSlot;
-    let dl_slot = match route.slot {
-        AkashaSlot::Eco => DlSlot::Eco,
-        AkashaSlot::Brain => DlSlot::Brain,
-        AkashaSlot::Creative => DlSlot::Creative,
-    };
-    let effective_tier = perf_profile.effective_tier;
-    let catalog_entry = crate::downloader::catalog::lookup(effective_tier, dl_slot);
+    // Ha a kért expert nincs letöltve (pl. user megpróbálja "Kód"-ot
+    // használni mielőtt a háttér-letöltés végzett volna), és NEM Szöveg,
+    // akkor visszaesünk a Szövegre (bundle-elt, mindig elérhető).
     let models_dir_resolved = akasha_cfg.models_dir_path(&launch_root);
+    let mut model_filename = slot_to_filename(route.slot);
+    let mut model_path = models_dir_resolved.join(&model_filename);
+    let mut effective_slot = route.slot;
 
-    let (model_path, model_filename) = if let Some(entry) = catalog_entry {
-        let fname = entry.local_filename();
-        let path = models_dir_resolved.join(&fname);
-        if path.exists() {
-            (path, fname)
-        } else {
-            // Fallback ugyanannak a tier-nek az Eco-jára
-            let eco = crate::downloader::catalog::lookup(effective_tier, DlSlot::Eco);
-            if let Some(eco_entry) = eco {
-                let eco_fname = eco_entry.local_filename();
-                let eco_path = models_dir_resolved.join(&eco_fname);
-                if eco_path.exists() {
-                    (eco_path, eco_fname)
-                } else {
-                    let err = format!(
-                        "Modell fájl hiányzik: {} (és az Eco fallback se érhető el). \
-                         Töltsd le a {} tier modelljeit a Beállításokból.",
-                        fname,
-                        crate::downloader::catalog::tier_key_for_filename(effective_tier),
-                    );
-                    let _ = app.emit("akasha-error", &err);
-                    return Err(err);
-                }
+    let is_valid_gguf = |p: &std::path::Path| -> bool {
+        std::fs::metadata(p).map(|m| m.len()).unwrap_or(0) >= 50_000_000
+    };
+
+    if !is_valid_gguf(&model_path) {
+        // Hiányzó/sérült expert → Szöveg fallback (ha nem maga a Szöveg)
+        if route.slot != AkashaSlot::Szoveg {
+            let szoveg_filename = slot_to_filename(AkashaSlot::Szoveg);
+            let szoveg_path = models_dir_resolved.join(&szoveg_filename);
+            if is_valid_gguf(&szoveg_path) {
+                debug_log::dlog(
+                    "lib.rs:akasha_chat",
+                    "H3",
+                    "expert hiányzik → Szöveg fallback",
+                    serde_json::json!({
+                        "requested": route.slot.key(),
+                        "missing_path": model_path.display().to_string(),
+                    }),
+                );
+                effective_slot = AkashaSlot::Szoveg;
+                model_filename = szoveg_filename;
+                model_path = szoveg_path;
             } else {
-                let err = format!("Modell fájl hiányzik: {fname}");
+                let err = format!(
+                    "Sem a kért expert ({}), sem a Szöveg fallback nincs telepítve. \
+                     Várd meg a háttér-letöltés végét.",
+                    route.slot.label(),
+                );
                 let _ = app.emit("akasha-error", &err);
                 return Err(err);
             }
+        } else {
+            let err = format!(
+                "A Szöveg expert (alap) nincs telepítve: {model_filename}. \
+                 Indítsd újra az appot — első indításkor automatikusan települ."
+            );
+            let _ = app.emit("akasha-error", &err);
+            return Err(err);
         }
-    } else {
-        // Blocked tier vagy ismeretlen kombináció: visszaesünk a régi
-        // config.toml-os fájlnévre - elsősorban a v0.1.2-es telepítések
-        // visszafelé kompatibilitásához.
-        let path = akasha_cfg.arsenal_file_path(&launch_root, &route.model_filename);
-        (path, route.model_filename.clone())
+    }
+
+    // A route mostantól az effektív slot-ot tükrözze (statisztika + UI)
+    let route = akasha::router::RouteResult {
+        slot: effective_slot,
+        model_filename: model_filename.clone(),
+        resource_limited: route.resource_limited,
     };
-    if !model_path.exists() {
-        let err = format!(
-            "Modell fájl hiányzik: {model_filename}. Töltsd le a Beállítások › Modellek menüben."
-        );
-        let _ = app.emit("akasha-error", &err);
-        return Err(err);
-    }
-    if std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0) < 50_000_000 {
-        let err = format!(
-            "Modell fájl sérült vagy hiányos (túl kicsi): {model_filename}. Töltsd le újra."
-        );
-        let _ = app.emit("akasha-error", &err);
-        return Err(err);
-    }
 
     // A llama-server router módja preset-néven kezeli a modelleket (kiterjesztés nélkül).
     // Ezt a nevet küldjük a /models/load és a /v1/chat/completions végpontokra is.
@@ -937,34 +922,8 @@ fn memory_notes_delete(state: State<'_, AppState>, id: String) -> Result<(), Str
 }
 
 // ===========================================================================
-//  FIRST-RUN DOWNLOADER (modellek + llama-server runtime)
+//  v0.2.0 DOWNLOADER (3 expert + llama-server runtime, háttér-letöltéssel)
 // ===========================================================================
-
-use akasha::perf::Tier as PerfTier;
-use downloader::Slot as DlSlot;
-
-/// Az aktuálisan érvényes (recommended) tier-t adja vissza a Settings-ben
-/// beállított `forced_tier`-t is figyelembe véve.
-fn effective_tier_from(
-    state: &State<'_, AppState>,
-) -> Result<PerfTier, String> {
-    let snap = {
-        let mut hw = state.hardware.lock().map_err(|e| e.to_string())?;
-        hw.snapshot()
-    };
-    let perf_cfg = state
-        .config
-        .lock()
-        .map_err(|e| e.to_string())?
-        .performance
-        .clone();
-    let profile = akasha::perf::compute_profile(
-        &snap,
-        perf_cfg.forced_tier.as_deref(),
-        perf_cfg.hardware_protection_enabled,
-    );
-    Ok(profile.effective_tier)
-}
 
 #[tauri::command]
 fn check_setup_status(
@@ -972,11 +931,9 @@ fn check_setup_status(
 ) -> Result<downloader::SetupStatus, String> {
     let runtime_path = PathBuf::from(&state.paths.lock().map_err(|e| e.to_string())?.runtime_llama);
     let models_dir = PathBuf::from(&state.paths.lock().map_err(|e| e.to_string())?.models_akasha);
-    let tier = effective_tier_from(&state)?;
     Ok(downloader::store::check_setup_status(
         &runtime_path,
         &models_dir,
-        tier,
     ))
 }
 
@@ -1014,40 +971,125 @@ async fn download_runtime(
     downloader::store::download_runtime(&app, runtime_dir).await
 }
 
-/// Letölti egy konkrét tier × slot modellt.
+/// v0.2.0: egy konkrét expert letöltése slot-azonosító alapján
+/// ("szoveg" / "logika" / "kod").
 #[tauri::command]
-async fn download_tier_model(
+async fn download_expert(
     app: AppHandle,
     state: State<'_, AppState>,
-    tier: String,
     slot: String,
 ) -> Result<(), String> {
     let models_dir = PathBuf::from(
         &state.paths.lock().map_err(|e| e.to_string())?.models_akasha,
     );
-    let tier_val = PerfTier::from_key(&tier)
-        .ok_or_else(|| format!("Ismeretlen tier: {tier}"))?;
-    let slot_val = DlSlot::from_key(&slot)
+    let slot_val = AkashaSlot::from_key(&slot)
         .ok_or_else(|| format!("Ismeretlen slot: {slot}"))?;
-    downloader::store::download_tier_model(&app, tier_val, slot_val, &models_dir).await
+    downloader::store::download_expert(&app, slot_val, &models_dir).await
 }
 
-/// Letölti egy egész tier 3 modelljét egymás után (Eco, Brain, Creative).
-/// Progress event-eket emit-tál minden modellre.
+/// v0.2.0 háttér-letöltés orchestrátor.
+///
+/// A frontend ezt hívja meg miután az app betöltött (és a Szöveg expert
+/// elérhető). Sorban letölti a NEM-bundled expert-eket (jelenleg: Logika,
+/// Kód). A progresszt expertenként emit-eli `download-progress` event-tel,
+/// és minden expert befejezésekor `download-done`-t. Ha valamelyik
+/// elhasal, log-olja és megy tovább a következőre (best-effort - a user
+/// később kézzel újrapróbálhatja a Beállításokból).
+///
+/// Egyszerre csak EGY háttér-letöltés futhat (a `background_download_in_progress`
+/// AtomicBool-on keresztül). Ha már fut, no-op.
 #[tauri::command]
-async fn download_tier_pack(
+async fn start_background_downloads(
     app: AppHandle,
     state: State<'_, AppState>,
-    tier: String,
 ) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    // Egyetlen párhuzamos futás engedélyezett. compare_exchange = atomic
+    // "ha most false, állítsd true-ra".
+    if state
+        .background_download_in_progress
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        debug_log::dlog(
+            "lib.rs:start_background_downloads",
+            "H1",
+            "már fut háttér-letöltés, skip",
+            serde_json::json!({}),
+        );
+        return Ok(());
+    }
+
     let models_dir = PathBuf::from(
         &state.paths.lock().map_err(|e| e.to_string())?.models_akasha,
     );
-    let tier_val = PerfTier::from_key(&tier)
-        .ok_or_else(|| format!("Ismeretlen tier: {tier}"))?;
-    for slot in [DlSlot::Eco, DlSlot::Brain, DlSlot::Creative] {
-        downloader::store::download_tier_model(&app, tier_val, slot, &models_dir).await?;
+
+    // Eldöntjük melyik expert-ek hiányoznak még. A bundled (Szöveg) kimarad
+    // — azt a `migrate_eco_model` már elintézte, vagy később külön kézzel
+    // töltöttette le a user a Beállításokból.
+    let mut to_download: Vec<AkashaSlot> = Vec::new();
+    for entry in downloader::catalog::CATALOG {
+        if entry.bundled {
+            continue;
+        }
+        let path = models_dir.join(entry.local_filename());
+        let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if bytes < 50_000_000 {
+            to_download.push(entry.slot);
+        }
     }
+
+    if to_download.is_empty() {
+        // Semmi dolgunk - jelez a frontendnek hogy minden kész
+        let _ = app.emit("background-downloads-complete", ());
+        state
+            .background_download_in_progress
+            .store(false, Ordering::Release);
+        return Ok(());
+    }
+
+    let _ = app.emit("background-downloads-started", &to_download.iter().map(|s| s.key()).collect::<Vec<_>>());
+
+    // Klónoljuk a state-handle-t a háttér-taskba
+    let app_clone = app.clone();
+    let in_progress_flag = state.background_download_in_progress.clone();
+
+    tauri::async_runtime::spawn(async move {
+        for slot in to_download {
+            debug_log::dlog(
+                "lib.rs:start_background_downloads",
+                "H1",
+                "letöltés indul",
+                serde_json::json!({ "slot": slot.key() }),
+            );
+            match downloader::store::download_expert(&app_clone, slot, &models_dir).await {
+                Ok(()) => debug_log::dlog(
+                    "lib.rs:start_background_downloads",
+                    "H1",
+                    "letöltés kész",
+                    serde_json::json!({ "slot": slot.key() }),
+                ),
+                Err(e) => {
+                    debug_log::dlog(
+                        "lib.rs:start_background_downloads",
+                        "H1",
+                        "letöltés hiba (best-effort, folytatjuk)",
+                        serde_json::json!({ "slot": slot.key(), "error": e }),
+                    );
+                    let _ = app_clone.emit(
+                        "background-download-error",
+                        serde_json::json!({
+                            "slot": slot.key(),
+                            "error": e,
+                        }),
+                    );
+                }
+            }
+        }
+        let _ = app_clone.emit("background-downloads-complete", ());
+        in_progress_flag.store(false, Ordering::Release);
+    });
+
     Ok(())
 }
 
@@ -1428,8 +1470,8 @@ pub fn run() {
             check_setup_status,
             check_online,
             download_runtime,
-            download_tier_model,
-            download_tier_pack,
+            download_expert,
+            start_background_downloads,
             profile_get,
             profile_update_name,
             profile_record_event,

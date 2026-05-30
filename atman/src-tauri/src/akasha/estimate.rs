@@ -31,10 +31,14 @@ impl Default for EtaEstimator {
 
 impl EtaEstimator {
     pub fn new() -> Self {
+        // v0.2.0 baseline char-per-sec értékek a 3 expertre. Méretarányos:
+        // - Szöveg (2B Gemma): kicsi, gyors → magas cps
+        // - Logika (1.5B Math): a legkisebb → leggyorsabb
+        // - Kód (3B Coder): nagyobb, lassabb → alacsonyabb cps
         let mut defaults = HashMap::new();
-        defaults.insert(AkashaSlot::Eco, 45.0);
-        defaults.insert(AkashaSlot::Brain, 28.0);
-        defaults.insert(AkashaSlot::Creative, 35.0);
+        defaults.insert(AkashaSlot::Szoveg, 45.0);
+        defaults.insert(AkashaSlot::Logika, 55.0);
+        defaults.insert(AkashaSlot::Kod, 32.0);
         Self {
             chars_per_sec: Mutex::new(defaults),
         }
@@ -43,19 +47,16 @@ impl EtaEstimator {
     pub fn estimate_start(&self, slot: AkashaSlot, model_id: &str, prompt_len: usize) -> GenStartEvent {
         let cps = self.get_cps(slot);
         let expected_chars = (prompt_len as f64 * 1.5).max(200.0);
+        // Baseline-ms: a modell-betöltés + első token "warm-up" idő.
+        // Logika modell a legkisebb → leggyorsabb betöltés.
         let baseline_ms = match slot {
-            AkashaSlot::Eco => 8000,
-            AkashaSlot::Brain => 45000,
-            AkashaSlot::Creative => 25000,
+            AkashaSlot::Szoveg => 10000,
+            AkashaSlot::Logika => 6000,
+            AkashaSlot::Kod => 15000,
         };
         let estimated_ms = ((expected_chars / cps) * 1000.0) as u64;
         GenStartEvent {
-            slot: match slot {
-                AkashaSlot::Eco => "eco",
-                AkashaSlot::Brain => "brain",
-                AkashaSlot::Creative => "creative",
-            }
-            .to_string(),
+            slot: slot.key().to_string(),
             model_id: model_id.to_string(),
             estimated_total_ms: estimated_ms.max(baseline_ms / 2),
         }

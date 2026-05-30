@@ -6,9 +6,8 @@ import {
   type DlSlot,
   type DownloadDoneEvent,
   type DownloadProgressEvent,
+  type ExpertStatus,
   type HardwareProfile,
-  type ModelStatus,
-  type PerfTier,
   type SetupStatus,
 } from "../../lib/api";
 import { showToast } from "../../components/Toast";
@@ -41,8 +40,8 @@ const idleDownload = (): ModelDownloadState => ({
   speedMbps: 0,
 });
 
-/** Cella-kulcs a 9-cellás letöltés-állapot map-hez. */
-const cellKey = (tier: PerfTier, slot: DlSlot): string => `${tier}-${slot}`;
+// v0.2.0: a letöltés-állapot map kulcsa egyszerűen a slot ("szoveg" /
+// "logika" / "kod" / "runtime"), mert az 1 expert = 1 fájl.
 
 export function SettingsView() {
   const [config, setConfig] = useState<AtmanConfig | null>(null);
@@ -107,28 +106,18 @@ export function SettingsView() {
     return () => unlistens.forEach((un) => un());
   }, []);
 
-  const startModelDownload = async (tier: PerfTier, slot: DlSlot) => {
-    const key = cellKey(tier, slot);
+  const startExpertDownload = async (slot: DlSlot) => {
     setDownloads((prev) => ({
       ...prev,
-      [key]: { ...idleDownload(), status: "downloading" },
+      [slot]: { ...idleDownload(), status: "downloading" },
     }));
     try {
-      await api.downloadTierModel(tier, slot);
+      await api.downloadExpert(slot);
     } catch (e) {
       setDownloads((prev) => ({
         ...prev,
-        [key]: { ...idleDownload(), status: "error", error: String(e) },
+        [slot]: { ...idleDownload(), status: "error", error: String(e) },
       }));
-      showToast(`Letöltés sikertelen: ${e}`, "error", 4000);
-    }
-  };
-
-  const startTierPackDownload = async (tier: PerfTier) => {
-    try {
-      await api.downloadTierPack(tier);
-      showToast(`${tier} tier modelljei letöltve`);
-    } catch (e) {
       showToast(`Letöltés sikertelen: ${e}`, "error", 4000);
     }
   };
@@ -298,35 +287,16 @@ export function SettingsView() {
         />
 
         <SelectField
-          label="Mód kézi felülírása"
+          label="Védelmi szint kézi felülírása"
           value={perf.forcedTier ?? "auto"}
-          onChange={(v) => {
-            const newTier = v === "auto" ? null : v;
-            updatePerf({ forcedTier: newTier });
-            // Ha a user új tier-re vált és annak modelljei hiányoznak,
-            // figyelmeztessük a Beállítások › Modellek menüre.
-            if (newTier && setupStatus) {
-              const tierModels = setupStatus.models.filter(
-                (m) => m.tier === newTier,
-              );
-              const missing = tierModels.filter((m) => !m.installed);
-              if (missing.length > 0) {
-                const missingGb = missing.reduce((sum, m) => sum + m.sizeGb, 0);
-                showToast(
-                  `Az új mód ${missing.length} modellje hiányzik (~${missingGb.toFixed(1)} GB). Töltsd le a Modellek szekcióban.`,
-                  "info",
-                  6000,
-                );
-              }
-            }
-          }}
+          onChange={(v) => updatePerf({ forcedTier: v === "auto" ? null : v })}
           options={[
             { value: "auto", label: "AUTO (detektált alapján)" },
-            { value: "limp", label: "Light mód - gyenge gépre" },
-            { value: "standard", label: "Standard mód - átlagos gépre" },
-            { value: "pro", label: "Pro mód - erős gépre" },
+            { value: "limp", label: "Light — gyengébb gépre, óvatosabb" },
+            { value: "standard", label: "Standard — átlagos gép" },
+            { value: "pro", label: "Pro — erős gép, kevesebb throttling" },
           ]}
-          hint="⚠️ Csak akkor használd, ha tudod, mit csinálsz — gyengébb gépen a Pro mód lassú lesz, és a többi program is akadhat. Ha új módot választasz és annak modelljei hiányoznak, a Modellek szekcióban töltheted le őket."
+          hint="A v0.2.0-tól ugyanaz a 3 expert mindenkin fut — a mód csak azt szabályozza, hogy AKASHA mennyire óvatos a RAM/CPU használattal."
         />
 
         <ContextSlider
@@ -335,48 +305,28 @@ export function SettingsView() {
         />
       </section>
 
-      {/* ===== MODELLEK (3 tier × 3 slot mátrix) ===== */}
+      {/* ===== MODELLEK (v0.2.0: 3 specializált expert) ===== */}
       <section className="settings-card">
         <h2>Modellek</h2>
         <p className="settings-view__hint">
-          A LUMI az AKASHA motort 3 mód (<strong>Light/Standard/Pro</strong>) és
-          3 témakör (<strong>Eco/Brain/Creative</strong>) szerint csoportosítja.
-          Az appod a géped képességei alapján az ajánlott módot használja, de
-          itt bármelyik mód modelljeit letöltheted. A <strong>Brain</strong>{" "}
-          modellek a kódolás-specifikus Qwen Coder családból jönnek, az{" "}
-          <strong>Eco/Creative</strong> a magyar nyelven erős Gemma családból.
+          A LUMI 3 specializált expertet használ: <strong>Szöveg</strong>{" "}
+          (Gemma 2 2B), <strong>Logika</strong> (Qwen 2.5 Math 1.5B) és{" "}
+          <strong>Kód</strong> (Qwen 2.5 Coder 3B). A Szöveg az alap (a
+          telepítőben jön); a Logika és Kód az első indítás után automatikusan
+          letöltődik a háttérben. Itt manuálisan újratöltheted bármelyiket.
         </p>
 
         {setupStatus && (
-          <>
-            <ModelTierBlock
-              tier="limp"
-              label="Light mód — gyenge gépre, ~4 GB összesen"
-              models={setupStatus.models.filter((m) => m.tier === "limp")}
-              recommended={setupStatus.recommendedTier === "limp"}
-              downloads={downloads}
-              onDownload={startModelDownload}
-              onPack={() => startTierPackDownload("limp")}
-            />
-            <ModelTierBlock
-              tier="standard"
-              label="Standard mód — átlagos gépre, ~14 GB összesen"
-              models={setupStatus.models.filter((m) => m.tier === "standard")}
-              recommended={setupStatus.recommendedTier === "standard"}
-              downloads={downloads}
-              onDownload={startModelDownload}
-              onPack={() => startTierPackDownload("standard")}
-            />
-            <ModelTierBlock
-              tier="pro"
-              label="Pro mód — erős gépre, ~22 GB összesen"
-              models={setupStatus.models.filter((m) => m.tier === "pro")}
-              recommended={setupStatus.recommendedTier === "pro"}
-              downloads={downloads}
-              onDownload={startModelDownload}
-              onPack={() => startTierPackDownload("pro")}
-            />
-          </>
+          <div className="settings-experts">
+            {setupStatus.experts.map((e) => (
+              <ExpertCard
+                key={e.slot}
+                expert={e}
+                state={downloads[e.slot] ?? idleDownload()}
+                onDownload={() => startExpertDownload(e.slot)}
+              />
+            ))}
+          </div>
         )}
       </section>
 
@@ -589,123 +539,56 @@ function ThemeOption({
   );
 }
 
-function ModelTierBlock({
-  tier,
-  label,
-  models,
-  recommended,
-  downloads,
-  onDownload,
-  onPack,
-}: {
-  tier: PerfTier;
-  label: string;
-  models: ModelStatus[];
-  recommended: boolean;
-  downloads: Record<string, ModelDownloadState>;
-  onDownload: (tier: PerfTier, slot: DlSlot) => void;
-  onPack: () => void;
-}) {
-  const eco = models.find((m) => m.slot === "eco");
-  const brain = models.find((m) => m.slot === "brain");
-  const creative = models.find((m) => m.slot === "creative");
-  const allInstalled = eco?.installed && brain?.installed && creative?.installed;
-  return (
-    <div className={`settings-tier-block ${recommended ? "is-recommended" : ""}`}>
-      <div className="settings-tier-block__head">
-        <h3 className="settings-tier-block__title">
-          {label}
-          {recommended && (
-            <span className="settings-tier-block__badge">Ajánlott a gépedhez</span>
-          )}
-        </h3>
-        {!allInstalled && (
-          <button
-            type="button"
-            className="settings-view__btn"
-            onClick={onPack}
-          >
-            Az egész {tier === "limp" ? "Light" : tier === "pro" ? "Pro" : "Standard"} letöltése
-          </button>
-        )}
-      </div>
-      {eco && (
-        <ModelCell
-          model={eco}
-          dl={downloads[`${tier}-eco`]}
-          onDownload={() => onDownload(tier, "eco")}
-        />
-      )}
-      {brain && (
-        <ModelCell
-          model={brain}
-          dl={downloads[`${tier}-brain`]}
-          onDownload={() => onDownload(tier, "brain")}
-        />
-      )}
-      {creative && (
-        <ModelCell
-          model={creative}
-          dl={downloads[`${tier}-creative`]}
-          onDownload={() => onDownload(tier, "creative")}
-        />
-      )}
-    </div>
-  );
-}
-
-function ModelCell({
-  model,
-  dl,
+function ExpertCard({
+  expert,
+  state,
   onDownload,
 }: {
-  model: ModelStatus;
-  dl?: ModelDownloadState;
+  expert: ExpertStatus;
+  state: ModelDownloadState;
   onDownload: () => void;
 }) {
-  const downloading = dl?.status === "downloading";
-  const slotLabel = {
-    eco: "Eco",
-    brain: "Brain",
-    creative: "Creative",
-  }[model.slot];
+  const downloading = state.status === "downloading";
   return (
-    <div className={`settings-model-row ${model.installed ? "is-installed" : ""}`}>
-      <span className={`settings-model-row__icon ${model.installed ? "is-ok" : ""}`}>
-        {model.installed ? "✓" : downloading ? "⟳" : "○"}
+    <div className={`settings-model-row ${expert.installed ? "is-installed" : ""}`}>
+      <span className={`settings-model-row__icon ${expert.installed ? "is-ok" : ""}`}>
+        {expert.installed ? "✓" : downloading ? "⟳" : "○"}
       </span>
       <div className="settings-model-row__body">
         <div className="settings-model-row__label">
-          <span>
-            <strong>{slotLabel}</strong> · {model.displayName}
-          </span>
+          <strong>{expert.displayName}</strong>
+          {expert.bundled && (
+            <span className="settings-model-row__bundled-tag">Telepítőből</span>
+          )}
         </div>
-        <div className="settings-model-row__meta">~{model.sizeGb.toFixed(1)} GB</div>
-        {downloading && dl && (
+        <div className="settings-model-row__meta">
+          {expert.description} · ~{expert.sizeGb.toFixed(1)} GB
+        </div>
+        {downloading && (
           <>
             <div className="settings-model-row__bar">
               <div
                 className="settings-model-row__bar-fill"
-                style={{ width: `${dl.percent}%` }}
+                style={{ width: `${state.percent}%` }}
               />
             </div>
             <div className="settings-model-row__meta">
-              {dl.totalMb > 0 ? (
+              {state.totalMb > 0 ? (
                 <>
-                  {dl.downloadedMb.toFixed(0)} / {dl.totalMb.toFixed(0)} MB
+                  {state.downloadedMb.toFixed(0)} / {state.totalMb.toFixed(0)} MB
                 </>
               ) : (
-                <>{dl.downloadedMb.toFixed(0)} MB</>
+                <>{state.downloadedMb.toFixed(0)} MB</>
               )}
-              {dl.speedMbps > 0 && <> · {dl.speedMbps.toFixed(1)} MB/s</>}
+              {state.speedMbps > 0 && <> · {state.speedMbps.toFixed(1)} MB/s</>}
             </div>
           </>
         )}
-        {dl?.status === "error" && (
-          <div className="settings-model-row__error">Hiba: {dl.error}</div>
+        {state.status === "error" && (
+          <div className="settings-model-row__error">Hiba: {state.error}</div>
         )}
       </div>
-      {!model.installed && !downloading && (
+      {!expert.installed && !downloading && (
         <button
           type="button"
           className="settings-view__btn settings-model-row__btn"
@@ -714,14 +597,17 @@ function ModelCell({
           Letöltés
         </button>
       )}
-      {model.installed && (
+      {expert.installed && (
         <span className="settings-model-row__status">Telepítve</span>
       )}
     </div>
   );
 }
 
-function tierLabel(t: PerfTier): string {
+// Hardware-tier címke. v0.2.0-ban a tier már csak a védelmi szintet
+// szabályozza, nem a modell-választást — de a profil/diagnosztika UI-ban
+// még megjelenik.
+function tierLabel(t: import("../../lib/api").PerfTier): string {
   switch (t) {
     case "blocked":
       return "Nem futtatható";

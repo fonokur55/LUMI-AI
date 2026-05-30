@@ -2,20 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   api,
-  type DlSlot,
-  type DownloadComponent,
   type DownloadDoneEvent,
   type DownloadProgressEvent,
-  type ModelStatus,
-  type PerfTier,
   type SetupStatus,
 } from "../lib/api";
 import "./FirstRunDownload.css";
 
 type Props = {
-  /** A backend `check_setup_status`-ából - tartalmazza a recommended_tier-t és a 9 cellát. */
+  /** A backend `check_setup_status` válasza - csak a runtime + Szöveg
+   *  expert állapotát figyeljük (a többi háttérben jön). */
   status: SetupStatus;
-  /** Sikeres letöltés után - szülő frissít + bezár. */
+  /** Sikeres minimum-letöltés után - szülő frissít + bezár. */
   onComplete: () => void;
 };
 
@@ -43,73 +40,38 @@ const idle = (installed: boolean): CellState => ({
   speedMbps: 0,
 });
 
-const tierLabelHu = (t: PerfTier): string => {
-  switch (t) {
-    case "limp":
-      return "Light";
-    case "standard":
-      return "Standard";
-    case "pro":
-      return "Pro";
-    case "blocked":
-      return "Nem futtatható";
-  }
-};
-
 /**
- * v0.1.3+ first-run download wizard.
+ * v0.2.0 first-run download wizard.
  *
- * A wizard megnyílik, ha:
- *   - a runtime hiányzik, VAGY
- *   - a recommended_tier 3 modellje közül BÁRMELYIK hiányzik.
+ * SZŰKEBB szerep mint a v0.1.x-ben:
+ *   - Csak a KÖTELEZŐ MINIMUM: runtime + Szöveg expert
+ *   - A Logika és Kód NEM itt töltődik le - azt a háttér-letöltés rendszer
+ *     kezeli (`BackgroundDownloadStatus.tsx`)
+ *   - Ha a Szöveg expert bundle-elt és a `migrate_eco_model` már átmásolta,
+ *     itt csak a runtime-letöltést kell kezelni (vagy semmit)
  *
- * A user "Letöltés indítása" után automatikusan letölti a hiányzókat:
- *   1. Runtime (ha hiányzik) - egyetlen ZIP, kicsomagolás után kész
- *   2. Recommended tier 3 modellje sorban (Eco → Brain → Creative)
- *
- * Megszakíthatóság: kilépéskor a .part fájl törlődik (Rust oldal), és
- * következő indításkor a wizard megint megnyílik a hiányzó cellákra.
+ * Megnyílás feltétele: `status.minimumReady === false`. Ez kétféle lehet:
+ *   - runtime hiányzik (és/vagy Szöveg hiányzik)
  */
 export function FirstRunDownload({ status, onComplete }: Props) {
-  const recommendedTier = status.recommendedTier;
-  const tierModels: ModelStatus[] = status.models.filter(
-    (m) => m.tier === recommendedTier,
-  );
-  const ecoModel = tierModels.find((m) => m.slot === "eco");
-  const brainModel = tierModels.find((m) => m.slot === "brain");
-  const creativeModel = tierModels.find((m) => m.slot === "creative");
-
-  const tierTotalGb = tierModels.reduce((sum, m) => sum + m.sizeGb, 0);
+  const szovegExpert = status.experts.find((e) => e.slot === "szoveg");
+  const szovegInstalled = szovegExpert?.installed ?? false;
+  const szovegSizeGb = szovegExpert?.sizeGb ?? 1.6;
 
   const [runtime, setRuntime] = useState<CellState>(idle(status.runtimeInstalled));
-  const [eco, setEco] = useState<CellState>(idle(ecoModel?.installed ?? false));
-  const [brain, setBrain] = useState<CellState>(idle(brainModel?.installed ?? false));
-  const [creative, setCreative] = useState<CellState>(
-    idle(creativeModel?.installed ?? false),
-  );
+  const [szoveg, setSzoveg] = useState<CellState>(idle(szovegInstalled));
 
   const [phase, setPhase] = useState<"intro" | "downloading" | "done">("intro");
   const [error, setError] = useState<string | null>(null);
   const startedRef = useRef(false);
 
-  /** A backend event-azonosító megfeleltetése a frontend state-handler-nek. */
-  const setterFor = useCallback(
-    (component: DownloadComponent): React.Dispatch<React.SetStateAction<CellState>> | null => {
-      if (component === "runtime") return setRuntime;
-      // A modell-event-ek formátuma: `<tier>-<slot>` (pl. "standard-brain")
-      const parts = component.split("-");
-      if (parts.length !== 2) return null;
-      const slot = parts[1] as DlSlot;
-      if (slot === "eco") return setEco;
-      if (slot === "brain") return setBrain;
-      if (slot === "creative") return setCreative;
-      return null;
-    },
-    [],
-  );
-
   useEffect(() => {
     const unlistens: Array<() => void> = [];
+    const setterFor = (component: string) => {
+      if (component === "runtime") return setRuntime;
+      if (component === "szoveg") return setSzoveg;
+      return null;
+    };
     listen<DownloadProgressEvent>("download-start", (event) => {
       const set = setterFor(event.payload.component);
       if (!set) return;
@@ -138,9 +100,9 @@ export function FirstRunDownload({ status, onComplete }: Props) {
       set((s) => ({ ...s, status: "done", percent: 100 }));
     }).then((un) => unlistens.push(un));
     return () => unlistens.forEach((un) => un());
-  }, [setterFor]);
+  }, []);
 
-  const startMandatory = useCallback(async () => {
+  const startMinimum = useCallback(async () => {
     if (startedRef.current) return;
     startedRef.current = true;
     setError(null);
@@ -150,34 +112,17 @@ export function FirstRunDownload({ status, onComplete }: Props) {
       if (!status.runtimeInstalled) {
         await api.downloadRuntime();
       }
-      // A recommended tier 3 modellje sorban
-      if (!(ecoModel?.installed ?? false)) {
-        await api.downloadTierModel(recommendedTier, "eco");
-      }
-      if (!(brainModel?.installed ?? false)) {
-        await api.downloadTierModel(recommendedTier, "brain");
-      }
-      if (!(creativeModel?.installed ?? false)) {
-        await api.downloadTierModel(recommendedTier, "creative");
+      if (!szovegInstalled) {
+        await api.downloadExpert("szoveg");
       }
       setPhase("done");
     } catch (e) {
       setError(String(e));
       startedRef.current = false;
     }
-  }, [
-    status.runtimeInstalled,
-    ecoModel?.installed,
-    brainModel?.installed,
-    creativeModel?.installed,
-    recommendedTier,
-  ]);
+  }, [status.runtimeInstalled, szovegInstalled]);
 
-  const allDone =
-    runtime.status === "done" &&
-    eco.status === "done" &&
-    brain.status === "done" &&
-    creative.status === "done";
+  const allDone = runtime.status === "done" && szoveg.status === "done";
 
   return (
     <div className="frd-backdrop">
@@ -193,53 +138,40 @@ export function FirstRunDownload({ status, onComplete }: Props) {
               />
               <h1>Még egy lépés a chatelésig</h1>
               <p>
-                Az LUMI megnézte a géped képességeit és ezt látja:{" "}
-                <strong>{tierLabelHu(recommendedTier)} mód</strong>. Ehhez a
-                módhoz <strong>3 modellt</strong> töltünk le, hogy AKASHA
-                minden témakörre tudjon válaszolni. <strong>Egyszeri művelet</strong>{" "}
-                – minden a te gépeden marad, semmilyen adat nem megy ki.
+                A LUMI első indításához egyetlen alap-modell és az AKASHA motor
+                kell. Ez kb. <strong>{(szovegSizeGb + 0.05).toFixed(1)} GB</strong>{" "}
+                és pár perc — utána <strong>azonnal beszélgethetsz</strong>.
+                A két szakértő-modell (Logika, Kód) később, a háttérben
+                érkezik majd, amíg te chat-elsz.
               </p>
             </div>
 
             <div className="frd-list">
-              <DownloadRow label="AKASHA motor (llama-server)" sublabel="~30–46 MB" state={runtime} required />
-              {ecoModel && (
-                <DownloadRow
-                  label={`Eco — ${ecoModel.displayName}`}
-                  sublabel={`~${ecoModel.sizeGb.toFixed(1)} GB · gyors általános beszélgetés`}
-                  state={eco}
-                  required
-                />
-              )}
-              {brainModel && (
-                <DownloadRow
-                  label={`Brain — ${brainModel.displayName}`}
-                  sublabel={`~${brainModel.sizeGb.toFixed(1)} GB · kódolás, matematika`}
-                  state={brain}
-                  required
-                />
-              )}
-              {creativeModel && (
-                <DownloadRow
-                  label={`Creative — ${creativeModel.displayName}`}
-                  sublabel={`~${creativeModel.sizeGb.toFixed(1)} GB · kreatív írás, történet`}
-                  state={creative}
-                  required
-                />
-              )}
+              <DownloadRow
+                label="AKASHA motor (llama-server)"
+                sublabel="~30–46 MB · kötelező"
+                state={runtime}
+                required
+              />
+              <DownloadRow
+                label="Szöveg — Gemma 2 2B"
+                sublabel={`~${szovegSizeGb.toFixed(1)} GB · általános beszélgetés, kreatív írás · kötelező`}
+                state={szoveg}
+                required
+              />
             </div>
 
             <p className="frd-hint">
-              Összesen kb. <strong>{tierTotalGb.toFixed(1)} GB</strong>. Más tier
-              modelljeit később a <em>Beállítások › Modellek</em> menüből
-              letöltheted, ha pl. erősebb gépen futtatnád az LUMI-t.
+              A <strong>Logika</strong> (~1.0 GB) és <strong>Kód</strong> (~2.0 GB)
+              expert-eket a Szöveg-letöltés után automatikusan, csendben
+              elindítjuk a háttérben — addig is használhatod a LUMI-t.
             </p>
 
             <div className="frd-actions">
               <button
                 type="button"
                 className="frd-btn frd-btn--primary frd-btn--xl"
-                onClick={startMandatory}
+                onClick={startMinimum}
               >
                 Letöltés indítása
               </button>
@@ -252,28 +184,25 @@ export function FirstRunDownload({ status, onComplete }: Props) {
             <div className="frd-hero frd-hero--small">
               <h1>Letöltés folyamatban…</h1>
               <p>
-                Ne kapcsold ki az appot. Ha megszakad, a következő indításkor
-                a részfájl törlődik és újra kell kezdeni.
+                Ne kapcsold ki az appot. Pár perc múlva tudsz beszélgetni.
               </p>
             </div>
 
             <div className="frd-list">
-              <DownloadRow label="AKASHA motor" sublabel="~30–46 MB" state={runtime} required showProgress />
-              {ecoModel && (
-                <DownloadRow label="Eco modell" sublabel={`~${ecoModel.sizeGb.toFixed(1)} GB`} state={eco} required showProgress />
-              )}
-              {brainModel && (
-                <DownloadRow label="Brain modell" sublabel={`~${brainModel.sizeGb.toFixed(1)} GB`} state={brain} required showProgress />
-              )}
-              {creativeModel && (
-                <DownloadRow
-                  label="Creative modell"
-                  sublabel={`~${creativeModel.sizeGb.toFixed(1)} GB`}
-                  state={creative}
-                  required
-                  showProgress
-                />
-              )}
+              <DownloadRow
+                label="AKASHA motor"
+                sublabel="~30–46 MB"
+                state={runtime}
+                required
+                showProgress
+              />
+              <DownloadRow
+                label="Szöveg expert (Gemma 2 2B)"
+                sublabel={`~${szovegSizeGb.toFixed(1)} GB`}
+                state={szoveg}
+                required
+                showProgress
+              />
             </div>
 
             {error && (
@@ -287,7 +216,7 @@ export function FirstRunDownload({ status, onComplete }: Props) {
                   className="frd-btn"
                   onClick={() => {
                     setError(null);
-                    startMandatory();
+                    startMinimum();
                   }}
                 >
                   Újrapróbálás
@@ -303,9 +232,9 @@ export function FirstRunDownload({ status, onComplete }: Props) {
               <div className="frd-success">✨</div>
               <h1>Készen áll!</h1>
               <p>
-                Minden modell letöltődött. Most már bármilyen témára tudsz
-                kérdezni — AKASHA okosan választ a 3 modell közül a kérdés
-                alapján.
+                A Szöveg expert kész — most már beszélgethetsz LUMI-val.
+                A Logika és Kód expertek <strong>háttérben töltődnek</strong>
+                {" "}— a jobb alsó sarokban nyomon tudod követni.
               </p>
             </div>
 
@@ -353,12 +282,7 @@ function DownloadRow({
       <div className="frd-row__body">
         <div className="frd-row__head">
           <span className="frd-row__label">{label}</span>
-          {sublabel && (
-            <span className="frd-row__sub">
-              {sublabel}
-              {required && <span className="frd-row__required"> · kötelező</span>}
-            </span>
-          )}
+          {sublabel && <span className="frd-row__sub">{sublabel}</span>}
         </div>
         {showProgress && state.status === "downloading" && (
           <>
@@ -381,6 +305,9 @@ function DownloadRow({
           <div className="frd-row__meta">Kicsomagolás…</div>
         )}
       </div>
+      {required && state.status !== "done" && (
+        <span className="frd-row__required-tag">kötelező</span>
+      )}
     </div>
   );
 }

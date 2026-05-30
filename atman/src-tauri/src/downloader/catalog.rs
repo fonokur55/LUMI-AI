@@ -1,72 +1,54 @@
 // =========================================================================
-//  9-modelles tier × slot katalógus
+//  v0.2.0 katalógus - 3 SPECIALIZÁLT EXPERT
 // =========================================================================
-//  A LUMI 3 hardware-tier-re (Light/Standard/Pro) és 3 slot-ra
-//  (Eco/Brain/Creative) van bontva. Mindegyik kombinációhoz egy konkrét
-//  GGUF-fájl tartozik a HuggingFace-en.
+//  A v0.1.x 9-cellás tier × slot mátrixát egy tiszta 3-modell architektúrára
+//  cseréltük. Mindegyik expert egy szakterületre optimalizált, és Q4_K_M
+//  kvantálású — a kis modellek (1.5–3B) ennél lentebb (Q3) észlelhetően
+//  butulnak, ezért feljebb tartjuk a minőségi sávot.
 //
-//  Filozófia:
-//   - Eco és Creative: Gemma-család (magyar nyelvi erősség + abliterated
-//     a kreatív szabadsághoz)
-//   - Brain: Qwen2.5-Coder-család (kifejezetten kód-fókusszú fine-tune,
-//     GPT-3.5 / GPT-4 közeli kódminőség lokál futtatáskor)
+//  EXPERTEK:
+//    SZÖVEG (Gemma 2 2B-it, ~1.6 GB) - általános beszélgetés, kreatív írás,
+//                                       marketing. Magyar nyelvi erősség.
+//                                       BUNDLE-ELT a telepítőben (azonnal
+//                                       használható telepítés után).
+//    LOGIKA (Qwen 2.5 Math 1.5B-Instruct, ~1.0 GB) - matek, logika,
+//                                                     Chain-of-Thought
+//    KÓD    (Qwen 2.5 Coder 3B-Instruct, ~2.0 GB) - programozás
 //
-//  A modellek mind Apache 2.0 vagy hasonló kereskedelmileg engedélyezett
-//  licenc alatt.
+//  Összesen: ~4.6 GB (vs. régi 22 GB).
+//  Egy időpontban RAM-ban: ~1.5–2.8 GB (a router unload-olja a többit).
 // =========================================================================
 
-use crate::akasha::perf::Tier;
+use crate::akasha::types::AkashaSlot;
 use serde::Serialize;
 
-/// A 3 chat-slot, amit a router választ a prompt alapján.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Slot {
-    Eco,
-    Brain,
-    Creative,
-}
-
-impl Slot {
-    pub fn key(&self) -> &'static str {
-        match self {
-            Slot::Eco => "eco",
-            Slot::Brain => "brain",
-            Slot::Creative => "creative",
-        }
-    }
-    pub fn from_key(k: &str) -> Option<Self> {
-        match k.to_lowercase().as_str() {
-            "eco" => Some(Slot::Eco),
-            "brain" => Some(Slot::Brain),
-            "creative" => Some(Slot::Creative),
-            _ => None,
-        }
-    }
-}
-
-/// Egy modell-bejegyzés a katalógusban.
+/// Egy expert leírása a katalógusban.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ModelEntry {
-    pub tier: Tier,
-    pub slot: Slot,
-    /// HuggingFace repó (pl. "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF")
+pub struct ExpertEntry {
+    pub slot: AkashaSlot,
+    /// HuggingFace repó (pl. "bartowski/gemma-2-2b-it-GGUF")
     pub repo: &'static str,
     /// A repón belüli GGUF fájl neve
     pub file: &'static str,
-    /// Felhasználóbarát megjelenítendő név (Settings + wizard)
+    /// Felhasználóbarát megjelenítendő név (Settings + first-run modal)
     pub display_name: &'static str,
-    /// Közelítő letöltött méret GB-ban (UI-progress + figyelmeztetés
-    /// felhasználónak)
+    /// Rövid leírás a UI-ban ("Mit tud?")
+    pub description: &'static str,
+    /// Közelítő letöltött méret GB-ban (progress + figyelmeztetés)
     pub size_gb: f32,
+    /// Bundled = a telepítőben szállítva (azonnal elérhető telepítés után).
+    /// Jelenleg csak a SZÖVEG.
+    pub bundled: bool,
 }
 
-impl ModelEntry {
-    /// A lemezen tárolt fájl neve: `<tier>-<slot>.gguf`.
-    /// Pl. `light-eco.gguf`, `standard-brain.gguf`, `pro-creative.gguf`.
+impl ExpertEntry {
+    /// A lemezen tárolt fájl neve: `<slot>.gguf` (pl. `szoveg.gguf`).
+    /// Ez független a HuggingFace forrásfájl nevétől, így ha később
+    /// modellt cserélünk, csak a `repo`+`file` változik, a path stabil
+    /// marad.
     pub fn local_filename(&self) -> String {
-        format!("{}-{}.gguf", tier_key(self.tier), self.slot.key())
+        format!("{}.gguf", self.slot.key())
     }
 
     /// HuggingFace public URL a letöltéshez.
@@ -78,119 +60,51 @@ impl ModelEntry {
     }
 }
 
-/// A tier-kulcs amit a lemezfájlnévben használunk. `Limp` → `"light"`,
-/// mert a UI-ban "Light mód"-ként szerepel (a `Limp` belső név régebbi).
-pub fn tier_key_for_filename(tier: Tier) -> &'static str {
-    match tier {
-        Tier::Limp => "light",
-        Tier::Standard => "standard",
-        Tier::Pro => "pro",
-        Tier::Blocked => "blocked",
-    }
-}
-
-fn tier_key(tier: Tier) -> &'static str {
-    tier_key_for_filename(tier)
-}
-
-/// A 9 modell - 3 tier × 3 slot.
-///
-/// Brand-szempontok:
-///  - Eco/Creative: Gemma-2 család (jó magyar)
-///  - Brain: Qwen2.5-Coder család (jó kód)
-///  - Pro-Brain: 14B Q4 - GPT-4-közeli kódminőség lokál
-pub const CATALOG: &[ModelEntry] = &[
-    // ===== Light tier (3-6 GB szabad RAM, kis modellek) =====
-    ModelEntry {
-        tier: Tier::Limp,
-        slot: Slot::Eco,
+// =========================================================================
+//  A 3 EXPERT
+// =========================================================================
+pub const CATALOG: &[ExpertEntry] = &[
+    ExpertEntry {
+        slot: AkashaSlot::Szoveg,
         repo: "bartowski/gemma-2-2b-it-GGUF",
         file: "gemma-2-2b-it-Q4_K_M.gguf",
-        display_name: "Gemma 2 2B (Light · Eco)",
+        display_name: "Szöveg — Gemma 2 2B",
+        description: "Általános beszélgetés, kreatív írás, magyar nyelvi erősség",
         size_gb: 1.6,
+        bundled: true,
     },
-    ModelEntry {
-        tier: Tier::Limp,
-        slot: Slot::Brain,
-        repo: "bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF",
-        file: "Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf",
-        display_name: "Qwen 2.5 Coder 1.5B (Light · Brain)",
+    ExpertEntry {
+        slot: AkashaSlot::Logika,
+        repo: "bartowski/Qwen2.5-Math-1.5B-Instruct-GGUF",
+        file: "Qwen2.5-Math-1.5B-Instruct-Q4_K_M.gguf",
+        display_name: "Logika — Qwen 2.5 Math 1.5B",
+        description: "Matek, logika, lépésről-lépésre érvelés (Chain-of-Thought)",
         size_gb: 1.0,
+        bundled: false,
     },
-    ModelEntry {
-        tier: Tier::Limp,
-        slot: Slot::Creative,
-        repo: "bartowski/gemma-2-2b-it-abliterated-GGUF",
-        file: "gemma-2-2b-it-abliterated-Q4_K_M.gguf",
-        display_name: "Gemma 2 2B abliterated (Light · Creative)",
-        size_gb: 1.6,
-    },
-    // ===== Standard tier (6-12 GB, közepes modellek) =====
-    ModelEntry {
-        tier: Tier::Standard,
-        slot: Slot::Eco,
-        repo: "bartowski/gemma-2-9b-it-GGUF",
-        file: "gemma-2-9b-it-Q3_K_M.gguf",
-        display_name: "Gemma 2 9B (Standard · Eco)",
-        size_gb: 3.8,
-    },
-    ModelEntry {
-        tier: Tier::Standard,
-        slot: Slot::Brain,
-        repo: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
-        file: "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
-        display_name: "Qwen 2.5 Coder 7B (Standard · Brain)",
-        size_gb: 4.7,
-    },
-    ModelEntry {
-        tier: Tier::Standard,
-        slot: Slot::Creative,
-        repo: "bartowski/gemma-2-9b-it-abliterated-GGUF",
-        file: "gemma-2-9b-it-abliterated-Q4_K_M.gguf",
-        display_name: "Gemma 2 9B abliterated (Standard · Creative)",
-        size_gb: 5.5,
-    },
-    // ===== Pro tier (12+ GB, csúcsminőség) =====
-    ModelEntry {
-        tier: Tier::Pro,
-        slot: Slot::Eco,
-        repo: "bartowski/gemma-2-9b-it-GGUF",
-        file: "gemma-2-9b-it-Q5_K_M.gguf",
-        display_name: "Gemma 2 9B Q5 (Pro · Eco)",
-        size_gb: 6.5,
-    },
-    ModelEntry {
-        tier: Tier::Pro,
-        slot: Slot::Brain,
-        repo: "bartowski/Qwen2.5-Coder-14B-Instruct-GGUF",
-        file: "Qwen2.5-Coder-14B-Instruct-Q4_K_M.gguf",
-        display_name: "Qwen 2.5 Coder 14B (Pro · Brain)",
-        size_gb: 9.0,
-    },
-    ModelEntry {
-        tier: Tier::Pro,
-        slot: Slot::Creative,
-        repo: "bartowski/gemma-2-9b-it-abliterated-GGUF",
-        file: "gemma-2-9b-it-abliterated-Q5_K_M.gguf",
-        display_name: "Gemma 2 9B abliterated Q5 (Pro · Creative)",
-        size_gb: 6.5,
+    ExpertEntry {
+        slot: AkashaSlot::Kod,
+        repo: "bartowski/Qwen2.5-Coder-3B-Instruct-GGUF",
+        file: "Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf",
+        display_name: "Kód — Qwen 2.5 Coder 3B",
+        description: "Programozás: Rust, Python, TypeScript, JS, C++, SQL",
+        size_gb: 2.0,
+        bundled: false,
     },
 ];
 
-/// Kikeresi a megadott tier+slot kombináció modell-bejegyzését.
-pub fn lookup(tier: Tier, slot: Slot) -> Option<&'static ModelEntry> {
-    CATALOG.iter().find(|m| m.tier == tier && m.slot == slot)
+/// Kikeresi a megadott slot expertjét.
+pub fn lookup(slot: AkashaSlot) -> Option<&'static ExpertEntry> {
+    CATALOG.iter().find(|e| e.slot == slot)
 }
 
-/// Egy adott tier 3 modellje (Eco, Brain, Creative).
-pub fn tier_pack(tier: Tier) -> [&'static ModelEntry; 3] {
-    let eco = lookup(tier, Slot::Eco).expect("Eco entry missing");
-    let brain = lookup(tier, Slot::Brain).expect("Brain entry missing");
-    let creative = lookup(tier, Slot::Creative).expect("Creative entry missing");
-    [eco, brain, creative]
+/// A teljes csomag mérete GB-ban (3 expert összesen).
+pub fn total_size_gb() -> f32 {
+    CATALOG.iter().map(|e| e.size_gb).sum()
 }
 
-/// Egy tier teljes mérete GB-ban (Eco + Brain + Creative).
-pub fn tier_total_size_gb(tier: Tier) -> f32 {
-    tier_pack(tier).iter().map(|m| m.size_gb).sum()
+/// Csak a NEM-bundled expertek mérete (amit első indításkor le kell
+/// tölteni a háttérben).
+pub fn background_download_size_gb() -> f32 {
+    CATALOG.iter().filter(|e| !e.bundled).map(|e| e.size_gb).sum()
 }

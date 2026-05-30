@@ -3,10 +3,10 @@ import { listen } from "@tauri-apps/api/event";
 
 export type ChatMessage = { role: string; content: string };
 
-/// AKASHA modell-slot választó:
-/// - "auto": a backend `route_prompt` keyword-routere dönti el
-/// - "eco" / "brain" / "creative": kényszerített slot a felhasználói dropdown-ból
-export type SlotChoice = "auto" | "eco" | "brain" | "creative";
+/// v0.2.0 AKASHA expert-slot választó:
+/// - "auto": a backend keyword-routere dönti el (Szöveg / Logika / Kód)
+/// - "szoveg" / "logika" / "kod": kényszerített expert a UI dropdown-ból
+export type SlotChoice = "auto" | "szoveg" | "logika" | "kod";
 
 export type AppPaths = {
   launchRoot: string;
@@ -25,9 +25,13 @@ export type AppPaths = {
 };
 
 export type AkashaArsenalConfig = {
-  eco: string;
-  brain: string;
-  creative: string;
+  szoveg: string;
+  logika: string;
+  kod: string;
+  /** v0.1.x legacy mezők — backend csak beolvassa, nem használja. */
+  eco?: string | null;
+  brain?: string | null;
+  creative?: string | null;
 };
 
 export type AkashaThrottleConfig = {
@@ -223,31 +227,36 @@ export type MemoryNote = {
   updatedAt: string;
 };
 
-export type DlSlot = "eco" | "brain" | "creative";
+/** v0.2.0 expert-slot azonosító. */
+export type DlSlot = "szoveg" | "logika" | "kod";
 
-/** A 9-modelles tier × slot mátrix egy cellája. */
-export type ModelStatus = {
-  tier: PerfTier;
+/** A 3 expert egyikének telepítettségi állapota. */
+export type ExpertStatus = {
   slot: DlSlot;
   installed: boolean;
+  /** A `<slot>.gguf` fájl tényleges mérete bájtban (0 = nincs fájl). */
+  installedBytes: number;
   displayName: string;
+  description: string;
   sizeGb: number;
+  /** True, ha a telepítőben szállított (bundle-elt) expert — pl. a Szöveg. */
+  bundled: boolean;
 };
 
-/** Az LUMI setup-állapota - runtime + a 9 modell-cella + ajánlott tier. */
+/** v0.2.0 setup-állapot: runtime + 3 expert. */
 export type SetupStatus = {
   runtimeInstalled: boolean;
-  /** A hardware-detektálás alapján ajánlott tier (a Settings forced_tier-rel együtt). */
-  recommendedTier: PerfTier;
-  /** A 9 cella (3 tier × 3 slot) telepítettsége. */
-  models: ModelStatus[];
-  /** A KÖTELEZŐ minimum: runtime + a recommended_tier mindhárom modellje. */
+  /** A 3 expert állapota (fix sorrend: szoveg / logika / kod). */
+  experts: ExpertStatus[];
+  /** True, ha a runtime + Szöveg expert kész — ennyi kell ahhoz, hogy
+   *  a user chat-elhessen. Logika+Kód jöhet háttérben. */
   minimumReady: boolean;
+  /** True, ha mind a 3 expert + runtime telepítve van. */
+  allReady: boolean;
 };
 
-/** A download-progress event component-mezője most már `<tier>-<slot>`
- *  formátum (pl. "standard-brain"), illetve a runtime-é `"runtime"`.
- */
+/** Download-progress event component azonosító: "runtime" / "szoveg" /
+ *  "logika" / "kod". */
 export type DownloadComponent = string;
 
 export type DownloadProgressEvent = {
@@ -313,17 +322,18 @@ export const api = {
   memoryNotesDelete: (id: string) =>
     invoke<void>("memory_notes_delete", { id }),
 
-  // Első indítási letöltő + Beállítások › Modellek (9-cellás)
+  // v0.2.0 Setup + letöltés (3 expert + runtime)
   checkSetupStatus: () => invoke<SetupStatus>("check_setup_status"),
   checkOnline: () => invoke<boolean>("check_online"),
   /** A llama-server runtime letöltése (~30-46 MB). */
   downloadRuntime: () => invoke<void>("download_runtime"),
-  /** Egy konkrét tier × slot modell letöltése (~1-9 GB). */
-  downloadTierModel: (tier: PerfTier, slot: DlSlot) =>
-    invoke<void>("download_tier_model", { tier, slot }),
-  /** Egy egész tier 3 modellje (Eco + Brain + Creative) egymás után. */
-  downloadTierPack: (tier: PerfTier) =>
-    invoke<void>("download_tier_pack", { tier }),
+  /** Egy konkrét expert letöltése (`szoveg` / `logika` / `kod`). */
+  downloadExpert: (slot: DlSlot) =>
+    invoke<void>("download_expert", { slot }),
+  /** Háttérben elindítja a hiányzó expert-ek letöltését sorban.
+   *  Idempotent — ha már fut, no-op. */
+  startBackgroundDownloads: () =>
+    invoke<void>("start_background_downloads"),
   profileGet: () => invoke<ProfileData>("profile_get"),
   profileUpdateName: (name: string) => invoke<void>("profile_update_name", { name }),
   profileRecordEvent: (kind: string) => invoke<void>("profile_record_event", { kind }),
@@ -547,13 +557,19 @@ export function onBadgeUnlocked(cb: (id: string) => void) {
 }
 
 export function formatSlotLabel(slot: string | null | undefined): string {
-  if (!slot) return "Akasha";
+  if (!slot) return "AKASHA";
+  // v0.2.0 expert-nevek + visszafelé kompatibilis v0.1.x map (régi
+  // beszélgetésekben még szerepelhet a régi slot-azonosító).
   const map: Record<string, string> = {
-    eco: "Eco",
-    brain: "Brain",
-    creative: "Creative",
+    szoveg: "Szöveg",
+    logika: "Logika",
+    kod: "Kód",
+    // v0.1.x legacy
+    eco: "Szöveg",
+    brain: "Kód",
+    creative: "Szöveg",
   };
-  return `Akasha · ${map[slot.toLowerCase()] ?? slot}`;
+  return `AKASHA · ${map[slot.toLowerCase()] ?? slot}`;
 }
 
 export function formatMs(seconds: number): string {

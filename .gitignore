@@ -45,3 +45,7 @@ debug-*.log
 
 # Tauri
 atman/src-tauri/gen/
+
+# v0.2.0 bundled Szöveg expert (~1.6 GB) - a `scripts/fetch-bundled-szoveg`
+# letölti release-build előtt, NE pusholjd a repo-ba.
+atman/src-tauri/resources/*.gguf

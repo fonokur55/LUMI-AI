@@ -1,9 +1,7 @@
 use super::types::AkashaSlot;
-use crate::portable::config::{AkashaArsenalConfig, AkashaConfig};
+use crate::portable::config::AkashaConfig;
 use std::path::Path;
 
-const BRAIN_RAM_MB: u64 = 7000;
-const CREATIVE_RAM_MB: u64 = 4500;
 /// Minimális érvényes GGUF méret (sérült / részleges letöltés kiszűrése)
 const MIN_GGUF_BYTES: u64 = 50_000_000;
 
@@ -21,59 +19,32 @@ pub struct RouteResult {
     pub resource_limited: bool,
 }
 
+/// Kiválasztja a prompthoz illő expertet (Szöveg / Logika / Kód).
+///
+/// Routing logika:
+///   1. classify_prompt → kulcsszó-alapú kategorizálás
+///   2. Ha a kiválasztott expert nincs letöltve, visszaesés a Szövegre
+///      (mindig elérhető, mert bundled)
+///   3. Kritikus erőforráshelyzetben mindig a Szöveg (legkisebb, leggyorsabb)
 pub fn route_prompt(input: &RouteInput) -> RouteResult {
-    let arsenal = &input.akasha.arsenal;
     let mut slot = classify_prompt(input.prompt);
     let mut resource_limited = false;
 
-    let brain_path = input
-        .akasha
-        .arsenal_file_path(input.launch_root, &arsenal.brain);
-    let creative_path = input
-        .akasha
-        .arsenal_file_path(input.launch_root, &arsenal.creative);
-    let eco_path = input
-        .akasha
-        .arsenal_file_path(input.launch_root, &arsenal.eco);
-
-    let eco_ok = model_available(&eco_path);
-    let brain_ok = model_available(&brain_path);
-    let creative_ok = model_available(&creative_path);
-
+    // Kritikus RAM/CPU → mindig a Szöveg (a legkisebb, leggyorsabb)
     if input.is_critical {
-        if slot == AkashaSlot::Brain && brain_ok && input.available_ram_mb >= BRAIN_RAM_MB {
-            // egyértelmű brain kérés maradhat
-        } else {
-            slot = AkashaSlot::Eco;
+        if slot != AkashaSlot::Szoveg {
+            slot = AkashaSlot::Szoveg;
             resource_limited = true;
         }
     }
 
-    match slot {
-        AkashaSlot::Brain => {
-            if !brain_ok {
-                slot = pick_available_slot(eco_ok, brain_ok, creative_ok, AkashaSlot::Eco);
-            } else if input.available_ram_mb < BRAIN_RAM_MB {
-                slot = pick_available_slot(eco_ok, brain_ok, creative_ok, AkashaSlot::Eco);
-                resource_limited = true;
-            }
-        }
-        AkashaSlot::Creative => {
-            if !creative_ok {
-                slot = pick_available_slot(eco_ok, brain_ok, creative_ok, AkashaSlot::Eco);
-            } else if input.available_ram_mb < CREATIVE_RAM_MB {
-                slot = pick_available_slot(eco_ok, brain_ok, creative_ok, AkashaSlot::Eco);
-                resource_limited = true;
-            }
-        }
-        AkashaSlot::Eco => {
-            if !eco_ok {
-                slot = pick_available_slot(eco_ok, brain_ok, creative_ok, AkashaSlot::Brain);
-            }
-        }
+    // Ellenőrizzük a kiválasztott expert letöltöttségét; ha nincs meg,
+    // visszaesés a Szövegre (bundled, mindig elérhető)
+    if !slot_available(slot, input.launch_root, input.akasha) {
+        slot = AkashaSlot::Szoveg;
     }
 
-    let model_filename = filename_for_slot(slot, arsenal);
+    let model_filename = format!("{}.gguf", slot.key());
     RouteResult {
         slot,
         model_filename,
@@ -81,97 +52,76 @@ pub fn route_prompt(input: &RouteInput) -> RouteResult {
     }
 }
 
-fn model_available(path: &Path) -> bool {
-    std::fs::metadata(path)
+fn slot_available(slot: AkashaSlot, launch_root: &Path, akasha: &AkashaConfig) -> bool {
+    let filename = format!("{}.gguf", slot.key());
+    let path = akasha.arsenal_file_path(launch_root, &filename);
+    std::fs::metadata(&path)
         .map(|m| m.len() >= MIN_GGUF_BYTES)
         .unwrap_or(false)
 }
 
-/// Előny: eco → brain → creative; ha a preferált slot elérhető, azt választja.
-fn pick_available_slot(eco: bool, brain: bool, creative: bool, preferred: AkashaSlot) -> AkashaSlot {
-    let ok = |s: AkashaSlot| match s {
-        AkashaSlot::Eco => eco,
-        AkashaSlot::Brain => brain,
-        AkashaSlot::Creative => creative,
-    };
-    if ok(preferred) {
-        return preferred;
-    }
-    if eco {
-        AkashaSlot::Eco
-    } else if brain {
-        AkashaSlot::Brain
-    } else if creative {
-        AkashaSlot::Creative
-    } else {
-        AkashaSlot::Eco
-    }
-}
-
-fn filename_for_slot(slot: AkashaSlot, arsenal: &AkashaArsenalConfig) -> String {
-    match slot {
-        AkashaSlot::Eco => arsenal.eco.clone(),
-        AkashaSlot::Brain => arsenal.brain.clone(),
-        AkashaSlot::Creative => arsenal.creative.clone(),
-    }
-}
-
+/// Kulcsszó-alapú prompt-kategorizálás. STEM-matching: a magyar ragozott
+/// alakok is illeszkednek (pl. "függvényt" → "függvény").
+///
+/// Algoritmus:
+///   - score_kod  (kód kulcsszavak találata)
+///   - score_logika (matek/logika kulcsszavak)
+///   - A nagyobb score nyer; ha mindkettő 0, fallback Szöveg.
+///   - Döntetlen + mindkettő talált: kód-kontextus erősebb (egyetlen
+///     "rust struct"-példa még matek-szavakkal együtt is kód).
 fn classify_prompt(text: &str) -> AkashaSlot {
     let lower = text.to_lowercase();
 
-    // Magyar kulcsszavak STEM-formában (rövidített tövek), hogy a ragozott
-    // alakok is illeszkedjenek: "mesét" → "mese", "függvényt" → "függvény",
-    // "javítani" → "javít", stb.
-    let brain_score = score_keywords(
+    let kod_score = score_keywords(
         &lower,
         &[
             // angol kód-fogalmak
             "function", "class", "import", "def", "rust", "typescript",
             "javascript", "python", "sql", "api", "bug", "compile", "git",
-            "refactor", "debug", "variable", "struct", "enum", "async", "await",
-            "code", "algorithm",
+            "refactor", "debug", "variable", "struct", "enum", "async",
+            "await", "code", "algorithm", "regex", "tauri", "react",
+            "node", "npm", "cargo", "docker", "json", "yaml",
             // magyar tövek
-            "kód", "hiba", "javít", "program", "algoritmus", "matek", "egyenlet",
-            "excel", "logika", "adatbázis", "függvény", "változó", "típus",
-            "tipus", "osztály", "objektum", "fordít", "kompilál", "fejleszt",
-            "script", "szkript",
-        ],
-    );
-    let creative_score = score_keywords(
-        &lower,
-        &[
-            // angol kreatív-fogalmak
-            "story", "creative", "write a", "write me", "imagine", "roleplay",
-            "poem", "novel",
-            // magyar tövek (a stem-matching miatt mindenféle ragozás illeszkedik:
-            // "mese" → "mesét", "mesét", "mesével"; "írj" → "írj", "írjál"; stb.)
-            "történet", "törté", "kreatív", "írj", "ír egy", "vers", "poéma",
-            "szereplő", "fantáz", "beszélges", "érzel", "szabadon", "képzel",
-            "mese", "regény", "humor", "novella", "költ", "tündér", "varázs",
+            "kód", "hiba", "javít", "program", "algoritmus", "adatbázis",
+            "függvény", "változó", "típus", "tipus", "osztály", "objektum",
+            "fordít", "kompilál", "fejleszt", "script", "szkript", "excel",
+            "lekérdezés", "tábla", "metódus", "interfész",
         ],
     );
 
-    // Bármely egyértelmű találat dönt - a régi "ha rövid a prompt → mindig Eco"
-    // szabály ide-oda dobálta a triviális üzeneteket (pl. "Írj mesét egy
-    // farkasról" 34 karakter → eco, holott egyértelmű creative kérés).
-    if brain_score > creative_score && brain_score > 0 {
-        return AkashaSlot::Brain;
+    let logika_score = score_keywords(
+        &lower,
+        &[
+            // angol matek/logika
+            "math", "equation", "calculate", "solve", "derivative",
+            "integral", "logarithm", "logic", "proof", "theorem",
+            "geometry", "algebra", "probability", "statistics",
+            // magyar tövek
+            "matek", "egyenlet", "számít", "számol", "osztály", "törtek",
+            "derivált", "integrál", "logaritmus", "logika", "bizonyít",
+            "tétel", "geometria", "algebra", "valószínűség", "statiszt",
+            "számítás", "kerekít", "százalék", "arány", "képlet",
+            "egyenes", "vektor", "mátrix", "halmaz",
+        ],
+    );
+
+    if kod_score > logika_score && kod_score > 0 {
+        return AkashaSlot::Kod;
     }
-    if creative_score > brain_score && creative_score > 0 {
-        return AkashaSlot::Creative;
+    if logika_score > kod_score && logika_score > 0 {
+        return AkashaSlot::Logika;
     }
-    if brain_score > 0 && creative_score > 0 {
-        // Döntetlen + mindkettő talált: programozási kontextus erősebb.
-        return AkashaSlot::Brain;
+    if kod_score > 0 && logika_score > 0 {
+        // Döntetlen + mindkettő talált: kód-kontextus erősebb.
+        return AkashaSlot::Kod;
     }
-    // Semmi specifikus keyword → marad az eco (gyors, általános beszélgetés).
-    AkashaSlot::Eco
+    // Semmi specifikus keyword → Szöveg (általános/kreatív beszélgetés).
+    AkashaSlot::Szoveg
 }
 
 /// Stem-matching keyword scorer. A promptot szavakra bontja és minden
 /// kulcsszót akkor talál, ha bármelyik szó a prompt-ban a kulcsszó tövével
-/// kezdődik. Így a magyar ragozott alakok is illeszkednek: "mesét"
-/// `starts_with` "mese" → match.
+/// kezdődik.
 fn score_keywords(lower: &str, keywords: &[&str]) -> u32 {
     let words: Vec<&str> = lower
         .split(|c: char| !c.is_alphanumeric())
@@ -180,8 +130,6 @@ fn score_keywords(lower: &str, keywords: &[&str]) -> u32 {
     keywords
         .iter()
         .filter(|k| {
-            // Egyszavas keyword: prefix-match. Többszavas (pl. "write a"):
-            // teljes substring-match a prompton.
             if k.contains(' ') {
                 lower.contains(*k)
             } else {

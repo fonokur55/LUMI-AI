@@ -24,8 +24,8 @@
 //  Az ELKÉSZÜLT komponensek megmaradnak.
 // =========================================================================
 
-use crate::akasha::perf::Tier;
-use crate::downloader::catalog::{self, ModelEntry, Slot};
+use crate::akasha::types::AkashaSlot;
+use crate::downloader::catalog::{self, ExpertEntry};
 use futures_util::StreamExt;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -33,56 +33,52 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncWriteExt;
 
 // =========================================================================
-//  Setup status check
+//  Setup status check - v0.2.0
+// =========================================================================
+//  A v0.1.x 9-cellás mátrixa eltűnt. Most a 3 expert mindegyikéhez
+//  egyetlen állapot tartozik (telepítve / nincs telepítve), + a runtime.
 // =========================================================================
 
-/// Egy konkrét tier × slot cella telepítettsége. A frontend a teljes
-/// 9-cellás mátrixot kapja meg (még a nem-recommended tier-eket is,
-/// hogy a Beállítások › Modellek táblázatában tudja mutatni).
+/// Egy expert telepítettsége. A frontend mind a 3-at megkapja:
+///   - first-run / background-download UI ebből látja mi van még hátra
+///   - ChatView slot-választó: ha `installed=false`, disable-li
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ModelStatus {
-    pub tier: Tier,
-    pub slot: Slot,
+pub struct ExpertStatus {
+    /// Slot azonosító (lowercase: "szoveg" / "logika" / "kod")
+    pub slot: AkashaSlot,
     pub installed: bool,
-    /// Megjeleníthető név (a katalógusból, pl. "Qwen 2.5 Coder 7B")
+    /// A `<slot>.gguf` fájl tényleges mérete a lemezen (vagy 0 ha nincs).
+    /// Részleges letöltés monitorozására hasznos.
+    pub installed_bytes: u64,
+    /// Megjeleníthető név a katalógusból (pl. "Szöveg — Gemma 2 2B")
     pub display_name: &'static str,
-    /// Méret GB-ban
+    /// Rövid leírás
+    pub description: &'static str,
+    /// Várt méret GB-ban
     pub size_gb: f32,
+    /// True, ha bundle-elt (telepítőben szállítva)
+    pub bundled: bool,
 }
 
-/// A meglévő komponensek és az ajánlott tier állapota. A frontend ez
-/// alapján dönti el:
-///  - megjeleníti-e a first-run download wizardot
-///  - a Beállítások › Modellek táblázatában mit mutat „telepítve" / „letöltendő"
-///  - a ChatView slot-választójában mit disable-l
+/// A v0.2.0 SetupStatus: a 3 expert + a llama-server runtime állapota.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetupStatus {
-    /// A llama-server bináris elérhető-e (>=10 MB)
+    /// A llama-server bináris megvan-e (>=50 KB)
     pub runtime_installed: bool,
-    /// A hardware-detektálás alapján ajánlott tier (Limp/Standard/Pro).
-    /// Blocked esetén a wizard nem nyílik meg, az app figyelmeztet.
-    pub recommended_tier: Tier,
-    /// A 9 cella állapota (3 tier × 3 slot)
-    pub models: Vec<ModelStatus>,
-    /// A KÖTELEZŐ minimum: runtime + recommended_tier 3 modellje
+    /// 3 expert állapota (fix sorrend: szoveg / logika / kod)
+    pub experts: Vec<ExpertStatus>,
+    /// True, ha a runtime + a SZÖVEG expert is telepítve van. Ennyi kell
+    /// ahhoz, hogy a user beszélgethessen — a Logika+Kód jöhet háttérben.
     pub minimum_ready: bool,
+    /// True, ha mind a 3 expert + a runtime is telepítve van.
+    pub all_ready: bool,
 }
 
 impl SetupStatus {
-    /// Visszaadja, hogy egy konkrét tier × slot kombináció telepítve van-e.
-    pub fn is_installed(&self, tier: Tier, slot: Slot) -> bool {
-        self.models
-            .iter()
-            .any(|m| m.tier == tier && m.slot == slot && m.installed)
-    }
-
-    /// Egy adott tier 3 modellje (Eco+Brain+Creative) mind telepítve van-e.
-    pub fn tier_pack_ready(&self, tier: Tier) -> bool {
-        self.is_installed(tier, Slot::Eco)
-            && self.is_installed(tier, Slot::Brain)
-            && self.is_installed(tier, Slot::Creative)
+    pub fn is_installed(&self, slot: AkashaSlot) -> bool {
+        self.experts.iter().any(|e| e.slot == slot && e.installed)
     }
 }
 
@@ -135,54 +131,60 @@ fn is_runtime_installed(runtime_llama_path: &Path) -> bool {
     false
 }
 
-/// A teljes 9-cellás mátrix telepítettségét + a runtime állapotát adja vissza.
-/// A `recommended_tier` a hívó dolga (hardware-snapshot alapján).
+/// v0.2.0 setup ellenőrzés: 3 expert + runtime.
+/// Minimum_ready = runtime + Szöveg expert (a bundled). Ennyi kell ahhoz,
+/// hogy a user már beszélgethessen, miközben Logika+Kód háttérben tölt.
 pub fn check_setup_status(
     runtime_llama_path: &Path,
     models_akasha_dir: &Path,
-    recommended_tier: Tier,
 ) -> SetupStatus {
     let runtime_installed = is_runtime_installed(runtime_llama_path);
+
+    let experts: Vec<ExpertStatus> = catalog::CATALOG
+        .iter()
+        .map(|entry: &ExpertEntry| {
+            let path = models_akasha_dir.join(entry.local_filename());
+            let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            ExpertStatus {
+                slot: entry.slot,
+                installed: bytes >= MODEL_MIN_BYTES,
+                installed_bytes: bytes,
+                display_name: entry.display_name,
+                description: entry.description,
+                size_gb: entry.size_gb,
+                bundled: entry.bundled,
+            }
+        })
+        .collect();
+
+    let szoveg_ready = experts
+        .iter()
+        .find(|e| e.slot == AkashaSlot::Szoveg)
+        .map(|e| e.installed)
+        .unwrap_or(false);
+    let all_models_ready = experts.iter().all(|e| e.installed);
 
     // #region agent log
     crate::debug_log::dlog(
         "store.rs:check_setup_status",
         "H1",
-        "runtime check",
+        "setup status",
         serde_json::json!({
             "runtime_llama_path": runtime_llama_path.display().to_string(),
-            "runtime_llama_exists": runtime_llama_path.exists(),
-            "runtime_llama_size": std::fs::metadata(runtime_llama_path).map(|m| m.len()).unwrap_or(0),
             "runtime_installed": runtime_installed,
             "models_akasha_dir": models_akasha_dir.display().to_string(),
+            "szoveg_ready": szoveg_ready,
+            "all_ready": all_models_ready,
+            "expert_status": experts.iter().map(|e| (e.slot.key(), e.installed, e.installed_bytes)).collect::<Vec<_>>(),
         }),
     );
     // #endregion
 
-    let models: Vec<ModelStatus> = catalog::CATALOG
-        .iter()
-        .map(|entry: &ModelEntry| {
-            let path = models_akasha_dir.join(entry.local_filename());
-            ModelStatus {
-                tier: entry.tier,
-                slot: entry.slot,
-                installed: file_at_least(&path, MODEL_MIN_BYTES),
-                display_name: entry.display_name,
-                size_gb: entry.size_gb,
-            }
-        })
-        .collect();
-
-    let recommended_pack_ready = catalog::tier_pack(recommended_tier).iter().all(|m| {
-        let path = models_akasha_dir.join(m.local_filename());
-        file_at_least(&path, MODEL_MIN_BYTES)
-    });
-
     SetupStatus {
         runtime_installed,
-        recommended_tier,
-        models,
-        minimum_ready: runtime_installed && recommended_pack_ready,
+        experts,
+        minimum_ready: runtime_installed && szoveg_ready,
+        all_ready: runtime_installed && all_models_ready,
     }
 }
 
@@ -598,18 +600,17 @@ fn extract_tar_gz_runtime(tar_gz_path: &Path, runtime_dir: &Path) -> Result<(), 
 //  Modell letöltés (HuggingFace public)
 // =========================================================================
 
-/// Egy konkrét tier × slot modell letöltése a katalógus szerint.
-/// A `target_path` a `models/akasha/<tier>-<slot>.gguf` lesz, a `component`
-/// pedig az event-azonosító (`light-eco`, `standard-brain` stb.).
-pub async fn download_tier_model(
+/// v0.2.0: egy expert letöltése a katalógus szerint.
+/// A `target_path` a `models/akasha/<slot>.gguf` lesz, a `component`
+/// pedig az event-azonosító (`szoveg` / `logika` / `kod`).
+pub async fn download_expert(
     app: &AppHandle,
-    tier: Tier,
-    slot: Slot,
+    slot: AkashaSlot,
     target_dir: &Path,
 ) -> Result<(), String> {
-    let entry = catalog::lookup(tier, slot)
-        .ok_or_else(|| format!("Nem található katalógus-bejegyzés: {tier:?}/{slot:?}"))?;
-    let component = format!("{}-{}", catalog::tier_key_for_filename(tier), slot.key());
+    let entry = catalog::lookup(slot)
+        .ok_or_else(|| format!("Nem található katalógus-bejegyzés: {:?}", slot))?;
+    let component = slot.key().to_string();
     let target_path = target_dir.join(entry.local_filename());
     download_model(app, &component, target_path, entry.repo, entry.file).await
 }
@@ -771,29 +772,5 @@ async fn download_stream_to_file(
     Ok(())
 }
 
-// =========================================================================
-//  Modell-katalógus - hol találhatók a forrás-fájlok
-// =========================================================================
-
-pub struct ModelSource {
-    pub repo: &'static str,
-    pub file: &'static str,
-}
-
-pub fn model_source(slot: &str) -> Option<ModelSource> {
-    match slot {
-        "eco" => Some(ModelSource {
-            repo: "Qwen/Qwen2.5-3B-Instruct-GGUF",
-            file: "qwen2.5-3b-instruct-q4_k_m.gguf",
-        }),
-        "brain" => Some(ModelSource {
-            repo: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
-            file: "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
-        }),
-        "creative" => Some(ModelSource {
-            repo: "dphn/dolphin-2.9.4-llama3.1-8b-gguf",
-            file: "dolphin-2.9.4-llama3.1-8b-Q4_K_M.gguf",
-        }),
-        _ => None,
-    }
-}
+// A v0.1.x ModelSource / model_source() pár obsolete a v0.2.0-tól -
+// a `downloader::catalog::CATALOG` az egyetlen forrás-igazság.

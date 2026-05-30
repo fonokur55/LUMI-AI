@@ -680,32 +680,31 @@ export function ChatView({
                         title: "AUTO",
                         desc: "A router választ a kérdés alapján",
                       },
-                      // Új sorrend: Kódolás & matek 2. helyen, mert sok user
-                      // erre érkezik (programozók, diákok).
+                      // v0.2.0 sorrend: Szöveg / Logika / Kód
                       {
-                        v: "brain",
-                        title: "Kódolás & matek",
-                        desc: "Kód, matematika, technikai feladatok",
+                        v: "szoveg",
+                        title: "Szöveg",
+                        desc: "Beszélgetés, kreatív írás, magyar nyelv",
                       },
                       {
-                        v: "eco",
-                        title: "Gyors (FAST)",
-                        desc: "Gyors, általános beszélgetés",
+                        v: "logika",
+                        title: "Logika & matek",
+                        desc: "Matematika, logika, Chain-of-Thought",
                       },
                       {
-                        v: "creative",
-                        title: "Gondolkodó (THINKING)",
-                        desc: "Történet, vers, kreatív írás",
+                        v: "kod",
+                        title: "Kód",
+                        desc: "Programozás: Rust / Python / TS / SQL",
                       },
                     ] as { v: SlotChoice; title: string; desc: string }[]
                   ).map((opt) => {
-                    // Disabled, ha a modell nincs letöltve a recommended_tier-en.
-                    // Az AUTO mindig elérhető (a router választ tier+slot szerint).
-                    const tier = setupStatus?.recommendedTier;
-                    const cell = setupStatus?.models.find(
-                      (m) => m.tier === tier && m.slot === opt.v,
-                    );
-                    const missing = setupStatus && opt.v !== "auto" && cell && !cell.installed;
+                    // v0.2.0 gating: Logika és Kód disabled, amíg nem települt.
+                    // AUTO és Szöveg mindig elérhető (Szöveg bundle-elt).
+                    const expert =
+                      opt.v !== "auto"
+                        ? setupStatus?.experts.find((e) => e.slot === opt.v)
+                        : null;
+                    const missing = !!setupStatus && !!expert && !expert.installed;
                     return (
                       <button
                         key={opt.v}
@@ -718,7 +717,7 @@ export function ChatView({
                         disabled={!!missing}
                         title={
                           missing
-                            ? "A modell még nincs telepítve. Töltsd le a Beállítások › Modellek menüből."
+                            ? "Még tölt… Várd meg a háttér-letöltést, vagy nézd meg a státuszát a jobb alsó sarokban."
                             : undefined
                         }
                         onClick={() => {
@@ -731,7 +730,7 @@ export function ChatView({
                           {opt.title}
                           {missing && (
                             <span className="chat-view__slot-item-missing">
-                              Nincs telepítve
+                              Még tölt…
                             </span>
                           )}
                         </span>
@@ -786,12 +785,12 @@ export function ChatView({
 
 function slotLabel(s: SlotChoice): string {
   switch (s) {
-    case "eco":
-      return "Gyors";
-    case "brain":
-      return "Kódolás";
-    case "creative":
-      return "Gondolkodó";
+    case "szoveg":
+      return "Szöveg";
+    case "logika":
+      return "Logika";
+    case "kod":
+      return "Kód";
     default:
       return "AUTO";
   }

@@ -3,6 +3,7 @@ import confetti from "canvas-confetti";
 import { AppShell } from "./app/AppShell";
 import { FirstRunSetup } from "./components/FirstRunSetup";
 import { FirstRunDownload } from "./components/FirstRunDownload";
+import { BackgroundDownloadStatus } from "./components/BackgroundDownloadStatus";
 import { ToastContainer } from "./components/Toast";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { MemoryNotesModal } from "./features/memory/MemoryNotesModal";
@@ -143,9 +144,16 @@ export default function App() {
       const status = await api.checkSetupStatus();
       setDownloadStatus(status);
       if (!status.minimumReady) {
+        // KÖTELEZŐ MINIMUM hiányzik (runtime + Szöveg) → blocking wizard
         setDownloadOpen(true);
       } else {
-        // Modellek kész → szülinap-check + welcome
+        // Minimum kész → background-letöltés a hiányzó expert-ekre +
+        // szülinap-check + welcome
+        if (!status.allReady) {
+          api.startBackgroundDownloads().catch((err) =>
+            console.error("background download trigger failed", err),
+          );
+        }
         checkBirthdayAndCelebrate();
       }
     } catch (e) {
@@ -227,10 +235,37 @@ export default function App() {
           status={downloadStatus}
           onComplete={() => {
             setDownloadOpen(false);
+            // Most már a Szöveg + runtime kész → indítsuk a háttér-letöltést
+            // a Logika és Kód expert-re
+            api.startBackgroundDownloads().catch((err) =>
+              console.error("background download trigger failed", err),
+            );
+            // Frissítjük a downloadStatus-t, hogy a BackgroundDownloadStatus
+            // komponens a friss állapotból induljon (a Szöveg most már
+            // installed = true)
+            api.checkSetupStatus()
+              .then((s) => setDownloadStatus(s))
+              .catch(() => {});
             checkBirthdayAndCelebrate();
           }}
         />
       )}
+      {/* v0.2.0: háttér-letöltés státusz pill (jobb alsó sarok). Csak akkor
+          renderelődik, ha van legalább 1 hiányzó NEM-bundled expert. */}
+      {downloadStatus &&
+        !downloadOpen &&
+        downloadStatus.minimumReady &&
+        !downloadStatus.allReady && (
+          <BackgroundDownloadStatus
+            initialStatus={downloadStatus}
+            onAllReady={() => {
+              // Friss status lekérése, hogy a slot-választó UI is megfrissüljön
+              api.checkSetupStatus()
+                .then((s) => setDownloadStatus(s))
+                .catch(() => {});
+            }}
+          />
+        )}
       <AppShell
         displayName={displayName}
         onNameChange={setDisplayName}

@@ -4,6 +4,7 @@ use crate::memory::MemoryStore;
 use crate::memory_notes::MemoryNotesStore;
 use crate::portable::{AppPaths, AtmanConfig};
 use crate::profile::ProfileStore;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 pub struct AppState {
@@ -17,6 +18,10 @@ pub struct AppState {
     pub hardware: Mutex<HardwareMonitor>,
     pub throttle: Arc<DynamicThrottle>,
     pub eta: Arc<EtaEstimator>,
+    /// v0.2.0: háttér-letöltés re-entry védelem. A
+    /// `start_background_downloads` Tauri command compare_exchange-szel
+    /// állítja be — ha már true, no-op.
+    pub background_download_in_progress: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -52,6 +57,7 @@ impl AppState {
             hardware: Mutex::new(HardwareMonitor::new()),
             throttle: Arc::new(DynamicThrottle::default()),
             eta: Arc::new(EtaEstimator::new()),
+            background_download_in_progress: Arc::new(AtomicBool::new(false)),
         })
     }
 }

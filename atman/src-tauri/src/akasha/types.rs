@@ -6,29 +6,83 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+// =========================================================================
+//  AkashaSlot - v0.2.0 architektúra: 3 specializált expert
+// =========================================================================
+//
+//  A v0.1.x-ben a slotok generikus kategóriák voltak (Eco/Brain/Creative),
+//  és a modell-választás 9-cellás tier × slot mátrixból ment. A v0.2.0-tól
+//  3 darab FIX, SPECIALIZÁLT expert van, és a tier-rendszer eltűnt:
+//
+//    SZÖVEG  - Gemma 2 2B-it Q4 (~1.6 GB) - általános/kreatív/beszélgetés
+//              Ez az expert BUNDLE-ELT a telepítőben → telepítés után
+//              azonnal beszélgethet a user.
+//    LOGIKA  - Qwen 2.5 Math 1.5B Q4 (~1.0 GB) - matek, logika, CoT
+//    KÓD     - Qwen 2.5 Coder 3B Q4 (~2.0 GB) - programozás
+//
+//  Összesen ~4.6 GB lemezen vs. a régi 22 GB.
+// =========================================================================
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AkashaSlot {
-    Eco,
-    Brain,
-    Creative,
+    /// SZÖVEG — Gemma 2 2B-it, általános beszélgetés / kreatív írás / marketing
+    Szoveg,
+    /// LOGIKA — Qwen 2.5 Math 1.5B-Instruct, matek / logika / Chain-of-Thought
+    Logika,
+    /// KÓD — Qwen 2.5 Coder 3B-Instruct, programozás (Rust/Python/TS/...)
+    Kod,
 }
 
 impl AkashaSlot {
+    /// Felhasználói felületen megjelenítendő (rövid, magyar) címke.
     pub fn label(self) -> &'static str {
         match self {
-            AkashaSlot::Eco => "Eco",
-            AkashaSlot::Brain => "Brain",
-            AkashaSlot::Creative => "Creative",
+            AkashaSlot::Szoveg => "Szöveg",
+            AkashaSlot::Logika => "Logika",
+            AkashaSlot::Kod => "Kód",
         }
     }
 
+    /// A wire-formátum azonosítója (lowercase ASCII, ékezet nélkül a
+    /// fájlnevek és JSON-kulcsok kompatibilitása miatt).
+    pub fn key(self) -> &'static str {
+        match self {
+            AkashaSlot::Szoveg => "szoveg",
+            AkashaSlot::Logika => "logika",
+            AkashaSlot::Kod => "kod",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "szoveg" | "szöveg" | "text" => Some(AkashaSlot::Szoveg),
+            "logika" | "logic" | "math" => Some(AkashaSlot::Logika),
+            "kod" | "kód" | "code" => Some(AkashaSlot::Kod),
+            // === Visszafelé kompatibilitás v0.1.x slot-nevekkel ===
+            // Ha egy régi user-üzenet még a régi neveket küldi, ezeket
+            // a legközelebbi új-szlotra map-eljük, hogy ne crash-eljen
+            // a feature.
+            "eco" => Some(AkashaSlot::Szoveg),
+            "creative" => Some(AkashaSlot::Szoveg),
+            "brain" => Some(AkashaSlot::Kod),
+            _ => None,
+        }
+    }
+
+    /// Statisztikai célra: melyik használati területbe (UsageDomain)
+    /// számít ennek az expertnek a használata.
     pub fn profile_domain(self) -> &'static str {
         match self {
-            AkashaSlot::Eco => "general",
-            AkashaSlot::Brain => "code",
-            AkashaSlot::Creative => "writing",
+            AkashaSlot::Szoveg => "writing",
+            AkashaSlot::Logika => "analysis",
+            AkashaSlot::Kod => "code",
         }
+    }
+
+    /// A 3 expert listája fix sorrendben (UI iteráláshoz).
+    pub fn all() -> [AkashaSlot; 3] {
+        [AkashaSlot::Szoveg, AkashaSlot::Logika, AkashaSlot::Kod]
     }
 }
 
@@ -78,16 +132,27 @@ szóban, használj ismert szinonimát helyette.\n\
 ne fordítsd le őket.";
 
 pub fn slot_system_prompt(slot: AkashaSlot, resource_limited: bool) -> String {
+    // Minden expert ugyanazt az AKASHA-identitást viseli a user felé -
+    // a 3 modell BELÜL specializálódik (kód vs. matek vs. szöveg), de
+    // a user szempontjából EGY AKASHA-val beszélget. A különböző
+    // system promptok csak a fókuszt és a stílust állítják.
     let base = match slot {
-        AkashaSlot::Brain => "Te AKASHA vagy, a NOMAD LUMI fő intelligenciája - szakértő programozó, \
-            matematikus és üzleti logikai asszisztens. Adj pontos, strukturált, futtatható megoldásokat. \
-            Kódot mindig teljes blokkokban adj.",
-        AkashaSlot::Creative => "Te AKASHA vagy, a NOMAD LUMI kreatív intelligenciája. \
-            Természetes, meleg, organikus magyar stílusban válaszolj. \
-            Mintha egy megbízható beszélgetőpartner lennél, aki nem ítélkezik.",
-        AkashaSlot::Eco => "Te AKASHA vagy, a NOMAD LUMI gyors öko-asszisztense. \
-            Tömör, gyakorlati, barátságos válaszokat adj magyarul. \
-            Kerüld a felesleges bővenlést - a felhasználó értékeli a gyorsaságot.",
+        AkashaSlot::Szoveg => "Te AKASHA vagy, a NOMAD LUMI általános és kreatív \
+            intelligenciája. Természetes, meleg, organikus magyar stílusban \
+            válaszolj. Beszélgetés, kreatív írás, marketing-szöveg, e-mail, \
+            ötletelés - ezekben vagy otthon. Mintha egy megbízható \
+            beszélgetőpartner lennél, aki nem ítélkezik.",
+        AkashaSlot::Logika => "Te AKASHA vagy, a NOMAD LUMI logikai és matematikai \
+            szakértője. Matek, logika, lépésről-lépésre érvelés (Chain-of-Thought) \
+            - ezek a területeid. Mielőtt válaszolsz, gondold végig a lépéseket; \
+            mutasd be a levezetést, ne csak a végeredményt. Pontos, strukturált \
+            válaszokat adj magyarul.",
+        AkashaSlot::Kod => "Te AKASHA vagy, a NOMAD LUMI programozó szakértője. \
+            Szuper-optimalizált szintaxis-értelmező Rust, Python, TypeScript, \
+            JavaScript, C++ és SQL nyelveken. Adj pontos, futtatható, \
+            production-ready kódot - mindig teljes blokkokban, magyar \
+            magyarázattal. Ha bizonytalanságot érzel, mondd ki, és adj \
+            alternatívát.",
     };
     let mut prompt = format!("{base}{PRIVACY_PREAMBLE}");
     if resource_limited {
@@ -98,7 +163,8 @@ pub fn slot_system_prompt(slot: AkashaSlot, resource_limited: bool) -> String {
     prompt
 }
 
-/// Legacy domain mapping for profile stats
+/// Profil-statisztika domain. Megtartottuk a régi neveket a DB-kompatibilitás
+/// miatt (a usage-history rekordok ezeket tárolják).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskDomain {
@@ -110,9 +176,9 @@ pub enum TaskDomain {
 
 pub fn slot_to_domain(slot: AkashaSlot) -> TaskDomain {
     match slot {
-        AkashaSlot::Brain => TaskDomain::Code,
-        AkashaSlot::Creative => TaskDomain::Writing,
-        AkashaSlot::Eco => TaskDomain::General,
+        AkashaSlot::Szoveg => TaskDomain::Writing,
+        AkashaSlot::Logika => TaskDomain::Analysis,
+        AkashaSlot::Kod => TaskDomain::Code,
     }
 }
 
