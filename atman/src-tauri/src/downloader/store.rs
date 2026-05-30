@@ -89,15 +89,50 @@ impl SetupStatus {
 /// Akkor tekintünk egy modell-fájlt "telepítettnek", ha legalább 50 MB
 /// (sérült/részleges letöltés kiszűrése).
 const MODEL_MIN_BYTES: u64 = 50_000_000;
-/// A llama-server bináris is legalább ekkora kell legyen. Pár száz KB-os
-/// nagyon kicsi - a tényleges llama-server.exe Windows-on általában 1-3 MB,
-/// macOS/Linux-on 5-10 MB. 500 KB egy konzervatív alsó küszöb.
-const RUNTIME_MIN_BYTES: u64 = 500_000;
+/// A llama-server bináris alsó küszöbe. v0.1.6-ban 500 KB volt, de az
+/// új llama.cpp release-eknél a `llama-server.exe` egy ~80-150 KB-os
+/// shim, ami DLL-ekből húzza a valódi logikát. A küszöb most 50 KB -
+/// még a legkisebb shim is nagyobb ennél, üres/sérült fájlt viszont
+/// továbbra is kiszűr.
+const RUNTIME_MIN_BYTES: u64 = 50_000;
 
 fn file_at_least(path: &Path, min_bytes: u64) -> bool {
     std::fs::metadata(path)
         .map(|m| m.is_file() && m.len() >= min_bytes)
         .unwrap_or(false)
+}
+
+/// A runtime telepítettségének robusztus ellenőrzése. Először a kanonikus
+/// `paths.runtime_llama` útvonalat nézi (pl. `runtime/win-x64/llama-server.exe`).
+/// Ha az nincs meg, akkor a szülőmappát végigpásztázza, és minden olyan
+/// fájlt elfogad amelynek a neve `llama-server`-rel kezdődik és átmegy
+/// a méret-küszöbön. Ez kezeli azokat az eseteket, amikor:
+///   - a llama.cpp release elnevezési konvenciója megváltozik
+///   - a tar.gz/zip-ben a binárist más basename-mel kapjuk meg
+///   - egy frissítés átírja a fájl nevét
+fn is_runtime_installed(runtime_llama_path: &Path) -> bool {
+    if file_at_least(runtime_llama_path, RUNTIME_MIN_BYTES) {
+        return true;
+    }
+    let Some(parent) = runtime_llama_path.parent() else {
+        return false;
+    };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+        // `llama-server`, `llama-server.exe`, `llama-server-vXYZ` stb.
+        if name.starts_with("llama-server") && file_at_least(&path, RUNTIME_MIN_BYTES) {
+            return true;
+        }
+    }
+    false
 }
 
 /// A teljes 9-cellás mátrix telepítettségét + a runtime állapotát adja vissza.
@@ -107,7 +142,22 @@ pub fn check_setup_status(
     models_akasha_dir: &Path,
     recommended_tier: Tier,
 ) -> SetupStatus {
-    let runtime_installed = file_at_least(runtime_llama_path, RUNTIME_MIN_BYTES);
+    let runtime_installed = is_runtime_installed(runtime_llama_path);
+
+    // #region agent log
+    crate::debug_log::dlog(
+        "store.rs:check_setup_status",
+        "H1",
+        "runtime check",
+        serde_json::json!({
+            "runtime_llama_path": runtime_llama_path.display().to_string(),
+            "runtime_llama_exists": runtime_llama_path.exists(),
+            "runtime_llama_size": std::fs::metadata(runtime_llama_path).map(|m| m.len()).unwrap_or(0),
+            "runtime_installed": runtime_installed,
+            "models_akasha_dir": models_akasha_dir.display().to_string(),
+        }),
+    );
+    // #endregion
 
     let models: Vec<ModelStatus> = catalog::CATALOG
         .iter()
@@ -384,7 +434,10 @@ fn extract_zip_runtime(zip_path: &Path, runtime_dir: &Path) -> Result<(), String
         }
         let name = entry.name().to_string();
         // A llama-server bináris és minden .dll/.dylib/.so kell;
-        // README/LICENSE-eket kihagyjuk.
+        // README/LICENSE-eket kihagyjuk. A `.metallib` és `.metal`
+        // macOS Metal GPU kernelek - Apple Silicon-on a llama-server
+        // ezek nélkül startup-kor crash-el, így ezeket is megőrizzük
+        // (Windows-on legfeljebb pár KB-os no-op, de safer így).
         let basename = Path::new(&name)
             .file_name()
             .and_then(|n| n.to_str())
@@ -395,6 +448,8 @@ fn extract_zip_runtime(zip_path: &Path, runtime_dir: &Path) -> Result<(), String
             || lower.ends_with(".dll")
             || lower.ends_with(".dylib")
             || lower.ends_with(".so")
+            || lower.ends_with(".metallib")
+            || lower.ends_with(".metal")
             || lower == "llama-server.exe"
             || lower == "llama-server";
         if !keep {
@@ -480,12 +535,19 @@ fn extract_tar_gz_runtime(tar_gz_path: &Path, runtime_dir: &Path) -> Result<(), 
             .unwrap_or("");
         let lower = basename.to_lowercase();
 
-        // Csak a runtime-hoz szükséges fájlokat tartjuk meg
+        // Csak a runtime-hoz szükséges fájlokat tartjuk meg.
+        // FONTOS macOS-en: a `.metallib` (Apple Silicon Metal GPU kernel)
+        // korábban kimaradt a filterből, ezért a llama-server startup-kor
+        // crash-elt ("default.metallib not found"), és a frontend csak
+        // "AKASHA szerver nem válaszolt időben"-ként látta. Most már bent
+        // van. A `.metal` az újabb buildek runtime-kompilált forrása.
         let keep = lower.contains("llama-server")
             || lower.contains("llama.")
             || lower.ends_with(".dll")
             || lower.ends_with(".dylib")
             || lower.ends_with(".so")
+            || lower.ends_with(".metallib")
+            || lower.ends_with(".metal")
             || lower == "llama-server.exe"
             || lower == "llama-server";
         if !keep {

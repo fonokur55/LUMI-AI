@@ -230,6 +230,24 @@ impl AkashaRuntime {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
+        // === macOS DYLD safety net ===
+        // Az llama.cpp release-bináris alapból `@rpath/libllama.dylib`-bel
+        // van linkelve és az rpath általában `@loader_path`, így a bináris
+        // melletti dylib-eket találja. Ha viszont a build-konvenció épp más
+        // (pl. `@executable_path/../lib`), akkor a DYLD_LIBRARY_PATH +
+        // DYLD_FALLBACK_LIBRARY_PATH explicit beállítása biztosít a
+        // csendes-fail ellen ("könyvtárak nem találhatók" → SIGKILL →
+        // health timeout). Unsigned user-letöltött binárisnál SIP nem
+        // strippeli ezeket az env-eket.
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(parent) = binary.parent() {
+                let lib_dir = parent.display().to_string();
+                cmd.env("DYLD_LIBRARY_PATH", &lib_dir);
+                cmd.env("DYLD_FALLBACK_LIBRARY_PATH", &lib_dir);
+            }
+        }
+
         // #region agent log
         crate::debug_log::dlog(
             "server.rs:start_router",
