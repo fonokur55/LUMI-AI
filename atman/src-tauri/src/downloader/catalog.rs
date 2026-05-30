@@ -75,11 +75,17 @@ pub const CATALOG: &[ExpertEntry] = &[
     },
     ExpertEntry {
         slot: AkashaSlot::Logika,
-        repo: "bartowski/Qwen2.5-Math-1.5B-Instruct-GGUF",
-        file: "Qwen2.5-Math-1.5B-Instruct-Q4_K_M.gguf",
-        display_name: "Logika — Qwen 2.5 Math 1.5B",
-        description: "Matek, logika, lépésről-lépésre érvelés (Chain-of-Thought)",
-        size_gb: 1.0,
+        // v0.2.1: Qwen 2.5 Math 1.5B helyett a Qwen 2.5 3B Instruct.
+        // A Math-modell magyarul érthetetlen szöveget generált (1.5B + math-
+        // only fine-tune kombináció). A 3B Instruct általános-célú, de
+        // jelentősen jobb HU + tud Chain-of-Thought-ot és alap matekot.
+        // Méret: 1.0 GB → 2.0 GB (még mindig kicsi), minőség lényegesen
+        // jobb.
+        repo: "bartowski/Qwen2.5-3B-Instruct-GGUF",
+        file: "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+        display_name: "Logika — Qwen 2.5 3B Instruct",
+        description: "Matek, logika, érvelés (Chain-of-Thought) magyarul",
+        size_gb: 2.0,
         bundled: false,
     },
     ExpertEntry {

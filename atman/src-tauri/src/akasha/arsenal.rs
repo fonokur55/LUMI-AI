@@ -1,6 +1,15 @@
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter};
 
+/// Specifikus error-marker, amit az `ensure_model_loaded` ad vissza, ha
+/// a llama-server azt mondja, hogy a kért preset nem létezik. Ezt a
+/// hívó (lib.rs:akasha_chat) elkapja, RESTART-elja a routert (hogy
+/// re-indexelje a `models/` mappát) és újrapróbálkozik a load-dal.
+///
+/// FONTOS: a marker-stringen a teljes Err értéknek `starts_with`-szel
+/// illeszkednie kell — a hívó ezt checkeli.
+pub const MODEL_NOT_INDEXED_ERROR: &str = "MODEL_NOT_INDEXED_BY_ROUTER";
+
 #[derive(Debug, Deserialize)]
 struct ModelsListResponse {
     data: Option<Vec<ModelEntry>>,
@@ -104,8 +113,24 @@ pub async fn ensure_model_loaded(
     );
     // #endregion
 
-    if post_status_u16 == 404 || text.contains("not found") {
-        return try_legacy_start_with_model(base_url, model_id).await;
+    // Specifikus "preset not found" jelzés: a router preset-cache nem
+    // tartalmazza ezt a model_id-t. Tipikusan akkor fordul elő, ha a
+    // server indulása UTÁN érkezett meg a háttér-letöltésből új .gguf
+    // fájl. A hívó (lib.rs:akasha_chat) erre a marker-error-ra
+    // restart-elja a routert és újrapróbálkozik.
+    if (post_status_u16 == 400 || post_status_u16 == 404)
+        && text.contains("not found")
+    {
+        crate::debug_log::dlog(
+            "arsenal.rs:ensure_model_loaded",
+            "H3",
+            "preset hiányzik a router cache-ből - restart kell",
+            serde_json::json!({
+                "model_id": model_id,
+                "http_status": post_status_u16,
+            }),
+        );
+        return Err(MODEL_NOT_INDEXED_ERROR.to_string());
     }
 
     if !is_success {

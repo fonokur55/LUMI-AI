@@ -570,18 +570,71 @@ async fn akasha_chat(
     );
     // #endregion
 
-    let load_res = ensure_model_loaded(&app, &base, &model_preset).await;
+    // v0.2.1: Retry-flow MODEL_NOT_INDEXED hibára.
+    //
+    // Háttér: a llama-server router induláskor indexeli a `models/`
+    // mappát. Ha utána egy háttér-letöltés befejeződik és új `.gguf`
+    // fájl kerül a mappába, a server preset-cache NEM frissül → a
+    // `/models/load` 400-as "model 'X' not found" hibát ad.
+    //
+    // Itt detektáljuk a specifikus marker-errort, és teljesen
+    // restart-eljuk a routert (ami friss indexszel jön fel), majd
+    // még egyszer próbáljuk a load-ot.
+    let mut load_res = ensure_model_loaded(&app, &base, &model_preset).await;
+    let needs_restart = load_res
+        .as_ref()
+        .err()
+        .map(|e| e == akasha::arsenal::MODEL_NOT_INDEXED_ERROR)
+        .unwrap_or(false);
+    let base = if needs_restart {
+        debug_log::dlog(
+            "lib.rs:akasha_chat",
+            "H3",
+            "preset hiányzik → AKASHA router restart + retry",
+            serde_json::json!({ "model_preset": model_preset }),
+        );
+        // 1. Stop + ensure (újraindítja a routert friss --models-dir scan-nel)
+        state.akasha.stop();
+        state.throttle.set_child_pid(None);
+        // Rövid várakozás, hogy a Windows OS feloldja a fájl-zárolásokat
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        ensure_akasha_running(&app, &state).await?;
+        // 2. Új base_url az új porthoz
+        let new_base = state
+            .akasha
+            .base_url()
+            .ok_or_else(|| "AKASHA nincs elindítva restart után.".to_string())?;
+        // 3. Retry
+        load_res = ensure_model_loaded(&app, &new_base, &model_preset).await;
+        new_base
+    } else {
+        base
+    };
     // #region agent log
     debug_log::dlog(
         "lib.rs:akasha_chat",
         "H3",
-        "ensure_model_loaded returned",
-        serde_json::json!({ "ok": load_res.is_ok(), "err": load_res.as_ref().err().cloned() }),
+        "ensure_model_loaded returned (esetleg retry után)",
+        serde_json::json!({
+            "ok": load_res.is_ok(),
+            "err": load_res.as_ref().err().cloned(),
+            "did_restart": needs_restart,
+        }),
     );
     // #endregion
     load_res.map_err(|e| {
-        let _ = app.emit("akasha-error", &e);
-        e
+        // A marker-error már nem érdekli a frontendet (csak retry-ra használtuk).
+        // Ha mégis ezzel jönne ki (kettős fail), általános hibaüzenetté alakítjuk.
+        let user_err = if e == akasha::arsenal::MODEL_NOT_INDEXED_ERROR {
+            format!(
+                "A modell ({model_preset}) nem érhető el a router-ben még a \
+                 újraindítás után sem. Próbáld újraindítani az appot."
+            )
+        } else {
+            e
+        };
+        let _ = app.emit("akasha-error", &user_err);
+        user_err
     })?;
     state
         .akasha

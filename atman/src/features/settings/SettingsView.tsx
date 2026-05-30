@@ -286,18 +286,11 @@ export function SettingsView() {
           description="Ha bekapcsolva (alap), AKASHA minden válasz után kiakasztja a modellt a memóriából, így 0 GB RAM-ot foglal, amíg nem chatelsz. A következő üzenetnél újratölti (~10–15 mp). Ha kikapcsolod, a modell a RAM-ban marad — gyorsabb a következő válasz, de állandóan 5+ GB foglalt."
         />
 
-        <SelectField
-          label="Védelmi szint kézi felülírása"
-          value={perf.forcedTier ?? "auto"}
-          onChange={(v) => updatePerf({ forcedTier: v === "auto" ? null : v })}
-          options={[
-            { value: "auto", label: "AUTO (detektált alapján)" },
-            { value: "limp", label: "Light — gyengébb gépre, óvatosabb" },
-            { value: "standard", label: "Standard — átlagos gép" },
-            { value: "pro", label: "Pro — erős gép, kevesebb throttling" },
-          ]}
-          hint="A v0.2.0-tól ugyanaz a 3 expert mindenkin fut — a mód csak azt szabályozza, hogy AKASHA mennyire óvatos a RAM/CPU használattal."
-        />
+        {/* v0.2.1: a "Védelmi szint kézi felülírása" select eltávolítva.
+            v0.2.0-tól ugyanaz a 3 expert fut minden gépen, így a tier-
+            felülírásnak nincs gyakorlati hatása. A defenzív viselkedést
+            (hardware-protection + RAM-takarékos mód) a fenti két Toggle
+            szabályozza. */}
 
         <ContextSlider
           value={config.akasha.nCtx}
@@ -424,33 +417,9 @@ function NumberField({
   );
 }
 
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-  hint,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-  hint?: string;
-}) {
-  return (
-    <label className="settings-view__field">
-      <span className="settings-view__field-label">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      {hint && <span className="settings-view__field-hint">{hint}</span>}
-    </label>
-  );
-}
+// SelectField komponens eltávolítva v0.2.1-ben - a "Védelmi szint kézi
+// felülírása" volt az egyetlen használója, az viszont eltűnt. Ha újra
+// kell, itt élesszük újra.
 
 /**
  * Context-méret csúszka: 4k, 8k, 12k, ... 128k (4k lépésközzel).

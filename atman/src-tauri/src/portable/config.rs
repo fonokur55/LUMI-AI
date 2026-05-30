@@ -284,7 +284,12 @@ fn default_embed_path() -> String {
     "models/embed/embed.Q4_K_M.gguf".into()
 }
 fn default_ctx() -> u32 {
-    4096
+    // v0.2.1: 4096 → 8192. A system prompt (~1500 tk) + memory_notes
+    // (~600 tk) + chat history (~500 tk) eddig csak ~1500 token user
+    // üzenetet hagyott, ami az "egy hosszabb spec → silent fail"
+    // jelenséget okozta. 8192 esetén a user ~5000 token-es üzenetet is
+    // küldhet baj nélkül. RAM-igény: 3B Q4 modellnél +~0.5 GB, ami OK.
+    8192
 }
 fn default_host() -> String {
     "127.0.0.1".into()

@@ -75,33 +75,77 @@ fn classify_prompt(text: &str) -> AkashaSlot {
     let kod_score = score_keywords(
         &lower,
         &[
-            // angol kód-fogalmak
-            "function", "class", "import", "def", "rust", "typescript",
-            "javascript", "python", "sql", "api", "bug", "compile", "git",
-            "refactor", "debug", "variable", "struct", "enum", "async",
-            "await", "code", "algorithm", "regex", "tauri", "react",
-            "node", "npm", "cargo", "docker", "json", "yaml",
-            // magyar tövek
-            "kód", "hiba", "javít", "program", "algoritmus", "adatbázis",
-            "függvény", "változó", "típus", "tipus", "osztály", "objektum",
-            "fordít", "kompilál", "fejleszt", "script", "szkript", "excel",
-            "lekérdezés", "tábla", "metódus", "interfész",
+            // === Programozási nyelvek és keretrendszerek ===
+            "rust", "typescript", "javascript", "python", "java", "kotlin",
+            "swift", "go", "ruby", "php", "scala", "haskell", "elixir",
+            "c++", "c#", "csharp",
+            // Web-stack
+            "html", "css", "scss", "sass", "tailwind", "bootstrap",
+            "react", "vue", "angular", "svelte", "nextjs", "next.js",
+            "node", "nodejs", "node.js", "express", "fastapi", "django",
+            "flask", "rails", "spring", "tauri",
+            // Tooling
+            "git", "github", "gitlab", "npm", "yarn", "pnpm", "cargo",
+            "pip", "poetry", "docker", "kubernetes", "k8s", "webpack",
+            "vite", "rollup", "babel", "eslint", "prettier",
+            // === Általános kód-fogalmak (angol) ===
+            "function", "class", "import", "def", "let", "const", "var",
+            "void", "return", "struct", "enum", "trait", "interface",
+            "impl", "async", "await", "promise", "callback", "lambda",
+            "regex", "regexp", "json", "xml", "yaml", "toml",
+            "api", "rest", "graphql", "sql", "nosql", "mongodb", "postgres",
+            "mysql", "redis", "sqlite",
+            "bug", "fix", "refactor", "debug", "compile", "build",
+            "deploy", "test", "unittest", "pytest", "jest",
+            "code", "snippet", "algorithm", "data structure",
+            // === Magyar tövek (stem-matching) ===
+            // alap programozási
+            "kód", "kódol", "programoz", "fejleszt", "implementál",
+            "szkript", "script",
+            // hibakezelés / refaktor
+            "hiba", "bug", "javít", "kijavít", "refaktorál", "tesztel",
+            // szintaxis
+            "függvény", "metódus", "osztály", "objektum", "változó",
+            "típus", "tipus", "interfész", "modul", "csomag",
+            // web/UI
+            "weboldal", "website", "honlap", "webapp", "frontend",
+            "backend", "felület", "design",
+            // adat
+            "adatbázis", "lekérdezés", "tábla", "rekord", "séma",
+            // egyéb tipikus magyar promptok
+            "fordít", "kompilál", "futtatás", "indítás", "telepít",
+            "excel", "csv", "json", "algoritmus", "automatiz",
+            // tipikus felhasználói kérések
+            "csinálj", "építsd", "építs", "hozz létre", "készíts",
+            "implementálj", "íjr egy", "írj egy",
         ],
     );
 
     let logika_score = score_keywords(
         &lower,
         &[
-            // angol matek/logika
-            "math", "equation", "calculate", "solve", "derivative",
-            "integral", "logarithm", "logic", "proof", "theorem",
-            "geometry", "algebra", "probability", "statistics",
-            // magyar tövek
-            "matek", "egyenlet", "számít", "számol", "osztály", "törtek",
-            "derivált", "integrál", "logaritmus", "logika", "bizonyít",
-            "tétel", "geometria", "algebra", "valószínűség", "statiszt",
-            "számítás", "kerekít", "százalék", "arány", "képlet",
-            "egyenes", "vektor", "mátrix", "halmaz",
+            // === Angol matek/logika ===
+            "math", "mathematics", "equation", "calculate", "solve",
+            "derivative", "integral", "logarithm", "logic", "proof",
+            "theorem", "geometry", "algebra", "trigonometry",
+            "probability", "statistics", "variance", "expectation",
+            "matrix", "vector", "tensor", "graph", "set theory",
+            "permutation", "combination", "factorial",
+            // === Magyar matek/logika tövek ===
+            "matek", "matem", "egyenlet", "egyenlőtlen", "számít",
+            "számol", "számítás", "összead", "kivon", "szoroz",
+            "oszt", "négyzetgyök", "köbgyök", "hatvány",
+            "törtek", "tört", "tizedes", "kerekít", "százalék",
+            "arány", "hányad", "képlet", "tétel", "bizonyít",
+            "derivált", "integrál", "logaritmus", "logika", "logikai",
+            "logikus", "érvel", "következtetés", "okosk", "gondolatmenet",
+            "geometria", "geometriai", "algebra", "trigon",
+            "valószínűség", "statiszt", "átlag", "medián", "szórás",
+            "egyenes", "kör", "háromszög", "négyszög", "körvonal",
+            "vektor", "mátrix", "halmaz", "halmaze", "függvénytan",
+            // Tipikus tankönyv-kifejezések
+            "mennyi", "hány", "hány százalék", "hány az", "mi az érték",
+            "mekkora", "milyen hosszú", "hány darab", "hány milyen",
         ],
     );
 
