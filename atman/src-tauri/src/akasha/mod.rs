@@ -7,6 +7,7 @@ pub mod perf;
 pub mod router;
 pub mod server;
 pub mod throttle;
+pub mod translation;
 pub mod types;
 
 pub use estimate::EtaEstimator;

@@ -441,6 +441,11 @@ export type AkashaStreamHandlers = {
   /// pre-flight tier recheck után). A UI banner-rel jelezheti a usernek
   /// ha lecsökkent a tier.
   onPerfProfile?: (profile: HardwareProfile) => void;
+  /// v0.2.4 - a Kód translation-flow fázis-jelzései:
+  ///  - "generating": a Coder éppen angolul generál (suppress mode)
+  ///  - "translating": a Gemma 2B fordítja a választ magyarra
+  /// A frontend a `GenerationIndicator` feliratait válthatja ennek alapján.
+  onPhase?: (phase: string) => void;
 };
 
 let _akashaHandlers: AkashaStreamHandlers = {};
@@ -487,6 +492,9 @@ function ensureAkashaListeners(): Promise<void> {
       _akashaHandlers.onPerfProfile?.(e.payload);
       _perfProfileBannerHandler?.(e.payload);
     });
+    await listen<string>("akasha-phase", (e) =>
+      _akashaHandlers.onPhase?.(e.payload),
+    );
   })();
   return _akashaListenersInit;
 }

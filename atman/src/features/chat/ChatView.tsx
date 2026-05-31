@@ -83,6 +83,10 @@ export function ChatView({
   const [useMemory] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadingModel, setLoadingModel] = useState<string | null>(null);
+  // v0.2.4 - a Kód translation-flow két fázisa: "generating" (Coder angolul
+  // generál) vagy "translating" (Gemma 2B magyarra fordít). null = sima
+  // streaming, nincs translation-flow.
+  const [phase, setPhase] = useState<string | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -229,6 +233,7 @@ export function ChatView({
         setThinkingBuf("");
         setStreaming(false);
         setLoadingModel(null);
+        setPhase(null);
         startTimeRef.current = null;
         setElapsedSec(0);
       },
@@ -236,6 +241,7 @@ export function ChatView({
         setError(e);
         setStreaming(false);
         setLoadingModel(null);
+        setPhase(null);
         streamBufRef.current = "";
         thinkingBufRef.current = "";
         setStreamBuf("");
@@ -245,6 +251,7 @@ export function ChatView({
       },
       onModelLoading: (id) => setLoadingModel(id),
       onModelReady: () => setLoadingModel(null),
+      onPhase: (p) => setPhase(p),
       onWebSearching: (q) =>
         setWebStatus(`🌐 Internet keresés: „${q.slice(0, 60)}${q.length > 60 ? "…" : ""}"`),
       onWebResults: (results) => {
@@ -566,6 +573,7 @@ export function ChatView({
           visible={showGenIndicator}
           loadingModel={loadingModel}
           elapsedSec={elapsedSec}
+          phase={phase}
         />
 
         <div className="chat-view__composer">

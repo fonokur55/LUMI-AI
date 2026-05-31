@@ -3,7 +3,7 @@
 # vezérli. A library-név (atman_lib) belső maradhat - a Rust modul-rendszer
 # nem szivárog ki sehova a kifelé látható UX-be.
 name = "lumi"
-version = "0.2.3"
+version = "0.2.4"
 description = "LUMI — portable private AI by NOMAD"
 authors = ["NOMAD"]
 edition = "2021"

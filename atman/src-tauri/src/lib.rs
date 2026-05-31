@@ -766,6 +766,42 @@ async fn akasha_chat(
         }
     };
 
+    // v0.2.4 — Kód mód translation-flow:
+    // a Qwen Coder 7B magyar tudása gyenge, ezért a Kód slotnál egy
+    // 2-lépéses pipeline-t futtatunk:
+    //   1. A Coder ANGOLUL generál választ (suppressed stream, a frontend
+    //      csak a "gondolkodom..." indikátort látja)
+    //   2. A Gemma 2 2B (Szöveg expert, natív magyar) átveszi és
+    //      magyarra fordítja a NEM-kód részeket. A code-blokkok érintetlenül
+    //      maradnak (markdown-aware fordítás)
+    //
+    // A `system_prompt_suffix` az "english only" instrukciót adja a Codernek;
+    // a `suppress_frontend_tokens` letiltja a token-streamet (a felhasználó
+    // nem lát angolul folyó választ, csak a végén a kész magyar verziót).
+    let is_code_translation_flow = effective_slot == AkashaSlot::Kod;
+    let (system_suffix, suppress_tokens) = if is_code_translation_flow {
+        (
+            Some(
+                "IMPORTANT — RESPONSE LANGUAGE RULE:\n\
+                For THIS response, write EVERYTHING in ENGLISH. Do NOT use Hungarian.\n\
+                The user's question may be in Hungarian, but your reply must be in fluent, \
+                technical English. Code (variable names, function names, comments) — also \
+                in English. The Hungarian translation will be handled by a separate \
+                translation system after you finish. Trust the pipeline, just write \
+                clean English. Markdown formatting (headings, lists, ```code blocks```) \
+                is preserved by the translator."
+                .to_string(),
+            ),
+            true,
+        )
+    } else {
+        (None, false)
+    };
+
+    if is_code_translation_flow {
+        let _ = app.emit("akasha-phase", "generating");
+    }
+
     let stream_result = stream_chat(
         app.clone(),
         &base,
@@ -785,6 +821,8 @@ async fn akasha_chat(
         poll_ms,
         state.akasha.child_pid(),
         cancel,
+        system_suffix,
+        suppress_tokens,
     )
     .await;
 
@@ -810,7 +848,97 @@ async fn akasha_chat(
         }
     }
 
-    let full = stream_result?;
+    let english_or_full = stream_result?;
+
+    // v0.2.4 - ha Kód mód: fordítási fázis
+    //
+    // Az english_or_full most az angol Coder-válasz. Be kell töltenünk a
+    // Gemma 2 2B Szöveg expertet, és vele fordítjuk magyarra a NEM-kód
+    // részeket. A code-blokkok placeholder-flow-val érintetlenül átkerülnek.
+    //
+    // A felhasználó SEMMIT nem látott eddig (suppress_frontend_tokens=true),
+    // most a magyar választ "post-streaming" módon emittáljuk vissza, kis
+    // chunkokban, hogy a UI természetesen formálódjon meg.
+    let full = if is_code_translation_flow && !english_or_full.trim().is_empty() {
+        let _ = app.emit("akasha-phase", "translating");
+        debug_log::dlog(
+            "lib.rs:akasha_chat",
+            "H4",
+            "translation flow - loading Gemma 2B fordítónak",
+            serde_json::json!({ "english_chars": english_or_full.len() }),
+        );
+
+        // Gemma 2B betöltése (a Coder már unload-olt fent, ha unload_after
+        // be volt kapcsolva — vagy szándékos hogy újratölt, hogy a Gemma
+        // beférjen a RAM-ba)
+        let translator_preset = "szoveg";
+        match ensure_model_loaded(&app, &base, translator_preset).await {
+            Ok(_) => {
+                match akasha::translation::coder_output_to_hungarian(
+                    &base,
+                    &english_or_full,
+                )
+                .await
+                {
+                    Ok(hungarian) => {
+                        // Post-streaming: a magyar választ ~20 karakteres
+                        // chunk-okra bontva emittáljuk, hogy a UI lássa
+                        // szóról-szóra megformálódni. Ez egy kis UX-trükk
+                        // — a teljes válasz már megvan, csak fokozatosan
+                        // adagoljuk a frontendnek.
+                        let mut acc = String::new();
+                        for ch in hungarian.chars() {
+                            acc.push(ch);
+                            // ~20 karakter közönként emittálunk, vagy
+                            // mondat-végén ('.', '!', '?', '\n')
+                            if acc.chars().count() >= 20
+                                || matches!(ch, '.' | '!' | '?' | '\n')
+                            {
+                                let _ = app.emit("akasha-token", acc.clone());
+                                acc.clear();
+                                // Kis sleep hogy ne egyszerre ömöljön be —
+                                // természetesebb élmény.
+                                tokio::time::sleep(
+                                    std::time::Duration::from_millis(15),
+                                )
+                                .await;
+                            }
+                        }
+                        if !acc.is_empty() {
+                            let _ = app.emit("akasha-token", acc);
+                        }
+                        let _ = app.emit("akasha-done", ());
+                        hungarian
+                    }
+                    Err(e) => {
+                        debug_log::dlog(
+                            "lib.rs:akasha_chat",
+                            "H4",
+                            "fordítás sikertelen, angol választ adunk vissza fallback-ként",
+                            serde_json::json!({ "error": e }),
+                        );
+                        // Fallback: az angol válasz mégis menjen ki a frontendnek
+                        let _ = app.emit("akasha-token", english_or_full.clone());
+                        let _ = app.emit("akasha-done", ());
+                        english_or_full
+                    }
+                }
+            }
+            Err(e) => {
+                debug_log::dlog(
+                    "lib.rs:akasha_chat",
+                    "H4",
+                    "Gemma 2B nem tölthető be fordítónak, angol válasz",
+                    serde_json::json!({ "error": e }),
+                );
+                let _ = app.emit("akasha-token", english_or_full.clone());
+                let _ = app.emit("akasha-done", ());
+                english_or_full
+            }
+        }
+    } else {
+        english_or_full
+    };
 
     // Mentjük az asszisztens választ is.
     if let Some(chat_id) = payload.chat_id.as_deref() {

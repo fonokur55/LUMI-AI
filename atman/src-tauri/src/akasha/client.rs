@@ -56,6 +56,15 @@ pub async fn stream_chat(
     poll_interval_ms: u64,
     child_pid: Option<u32>,
     cancel: Arc<AtomicBool>,
+    // v0.2.4 - opcionális system prompt extension (a Kód translation-flow
+    // ezt használja, hogy a Coder kifejezetten angolul válaszoljon).
+    system_prompt_suffix: Option<String>,
+    // v0.2.4 - ha true, NEM emittál `akasha-token`/`akasha-thinking-token`
+    // event-eket (a frontend csak a `akasha-phase` indikátort látja).
+    // A Kód translation-flow első fázisa ezt használja: az angol Coder
+    // válasz a felhasználó számára nem látszik, csak a végén jelenik
+    // meg a fordított magyar verzió.
+    suppress_frontend_tokens: bool,
 ) -> Result<String, String> {
     throttle.set_child_pid(child_pid);
 
@@ -144,6 +153,16 @@ pub async fn stream_chat(
         weekday = day_hu,
         time = now.format("%H:%M"),
     ));
+
+    // v0.2.4 - opcionális system prompt extension. A Kód translation-flow
+    // ide egy "answer ONLY in English" instrukciót fűz, hogy a Coder
+    // teljesen angolul válaszoljon (a fordító réteg utána magyarra teszi).
+    if let Some(suffix) = system_prompt_suffix.as_ref() {
+        if !suffix.is_empty() {
+            system.push_str("\n\n");
+            system.push_str(suffix);
+        }
+    }
 
     // (A `rag_context` paramétert már fentebb beolvastuk a system promptba -
     // most már RAG-memória és web-keresési eredmények egyszerre érkezhetnek
@@ -339,14 +358,16 @@ pub async fn stream_chat(
                         // beszélgetés-buborékban. A "full" stringbe csak a valódi
                         // content kerül, mert ez kerül elmentésre a chat history-ba.
                         if let Some(thinking) = &choice.delta.reasoning_content {
-                            if !thinking.is_empty() {
+                            if !thinking.is_empty() && !suppress_frontend_tokens {
                                 let _ = app.emit("akasha-thinking-token", thinking.clone());
                             }
                         }
                         if let Some(content) = &choice.delta.content {
                             if !content.is_empty() {
                                 full.push_str(content);
-                                let _ = app.emit("akasha-token", content.clone());
+                                if !suppress_frontend_tokens {
+                                    let _ = app.emit("akasha-token", content.clone());
+                                }
                             }
                         }
                     }

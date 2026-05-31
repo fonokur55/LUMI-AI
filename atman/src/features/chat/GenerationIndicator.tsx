@@ -4,6 +4,8 @@ type Props = {
   visible: boolean;
   loadingModel?: string | null;
   elapsedSec: number;
+  /** v0.2.4 Kód translation-flow fázis: "generating" / "translating" / null. */
+  phase?: string | null;
 };
 
 function formatElapsed(seconds: number): string {
@@ -17,20 +19,21 @@ function formatElapsed(seconds: number): string {
 }
 
 /**
- * v0.2.3: Random rotating "gondolkodás" feliratok.
+ * v0.2.3+ Random rotating "gondolkodás" feliratok.
  *
  * A "AKASHA gondolkodik..." statikus felirat helyett 3 másodpercenként
  * vált egy listából, hogy a user élőbbnek érezze az AKASHA-t (és ne
  * érezze úgy hogy "lefagyott" hosszú gondolkodás közben).
  *
- * A felirat-listát szándékosan magyar nyelvi árnyalatokkal töltöttük fel,
- * hogy AKASHA személyisége is átsejjen: nem gépi pörgést mutatunk,
- * hanem emberi "elgondolkodok" hangulatot.
+ * v0.2.4: a `phase` propon keresztül a Kód translation-flow két fázisához
+ * is külön mondatlista jár: "generating" alatt általános gondolkodás-
+ * feliratok, "translating" alatt fordítás-specifikus feliratok ("magyarra
+ * fordítok", "csiszolom a fordítást" stb.).
  *
  * A rotációhoz az `elapsedSec`-et használjuk (osztva 3-mal és modulo-zva),
  * így determinisztikus + nincs külön timer szükséges.
  */
-const THINKING_PHRASES = [
+const THINKING_PHRASES: string[] = [
   "Gondolkodom…",
   "Ezt alaposabban szemügyre veszem…",
   "Csiszolom a választ…",
@@ -43,16 +46,25 @@ const THINKING_PHRASES = [
   "Egy lépéssel közelebb…",
 ];
 
-function rotatingThinkingPhrase(elapsedSec: number): string {
-  // 3 másodpercenként váltunk, a listán körbe-körbe
-  const idx = Math.floor(Math.max(0, elapsedSec) / 3) % THINKING_PHRASES.length;
-  return THINKING_PHRASES[idx];
+const TRANSLATING_PHRASES: string[] = [
+  "Magyarra fordítok…",
+  "Csiszolom a magyar szöveget…",
+  "Természetes formába öntöm magyarul…",
+  "Még egy fordítási árnyalat…",
+  "Befejezem a fordítást…",
+  "Mindjárt magyarul…",
+];
+
+function rotatingPhrase(phrases: string[], elapsedSec: number): string {
+  const idx = Math.floor(Math.max(0, elapsedSec) / 3) % phrases.length;
+  return phrases[idx];
 }
 
 export function GenerationIndicator({
   visible,
   loadingModel,
   elapsedSec,
+  phase,
 }: Props) {
   if (!visible) return null;
 
@@ -65,10 +77,15 @@ export function GenerationIndicator({
     );
   }
 
+  // v0.2.4 - Kód translation-flow: ha "translating" fázis, fordítás-
+  // specifikus feliratokat mutatunk.
+  const isTranslating = phase === "translating";
+  const list = isTranslating ? TRANSLATING_PHRASES : THINKING_PHRASES;
+
   return (
     <div className="gen-indicator" role="status">
       <span className="gen-indicator__pulse" aria-hidden />
-      {rotatingThinkingPhrase(elapsedSec)}{" "}
+      {rotatingPhrase(list, elapsedSec)}{" "}
       <span className="gen-indicator__time">{formatElapsed(elapsedSec)}</span>
     </div>
   );
