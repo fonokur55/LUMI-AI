@@ -780,6 +780,17 @@ async fn akasha_chat(
     // nem lát angolul folyó választ, csak a végén a kész magyar verziót).
     let is_code_translation_flow = effective_slot == AkashaSlot::Kod;
     let (system_suffix, suppress_tokens) = if is_code_translation_flow {
+        // v0.2.5: a Coder system promptját több kritikus utasítással
+        // bővítjük az Áron-tesztek visszajelzései alapján:
+        //   1. ENGLISH-only — már a v0.2.4 óta megvolt
+        //   2. DESIGN PRECISION — kövesd a user szín/forma/layout kéréseit
+        //      pontosan (Áron "bézs/homok" kérése sötét UI-t kapott v0.2.4-ben)
+        //   3. FACTUAL ACCURACY — ne hallucinálj tényadatokat (Áron tesztje:
+        //      a Steve Jobs Apple CEO 1985-2011 hibás, Xerox PARC kalligráfia
+        //      hibás, Wozniak egyedüli alapító hibás)
+        //   4. NO FAKE SOURCES — ne találj ki forrás-URL-eket (v0.2.4-ben a
+        //      Coder hallucinált magyar webfejlesztés-oktató linkeket
+        //      "Források:" alatt, ami semmilyen valódi információt nem tartott)
         (
             Some(
                 "IMPORTANT — RESPONSE LANGUAGE RULE:\n\
@@ -789,7 +800,40 @@ async fn akasha_chat(
                 in English. The Hungarian translation will be handled by a separate \
                 translation system after you finish. Trust the pipeline, just write \
                 clean English. Markdown formatting (headings, lists, ```code blocks```) \
-                is preserved by the translator."
+                is preserved by the translator.\n\
+                \n\
+                IMPORTANT — DESIGN PRECISION RULE:\n\
+                If the user requests specific design elements (colors, fonts, shapes, \
+                sizes, layout, theme), follow them EXACTLY. Do not substitute your own \
+                defaults. Examples:\n\
+                - 'beige/sand/cream colors' → use warm earth tones like #F5E6D3, \
+                  #E8D5B7, #D4B896, #C9A572 — NEVER default to dark themes\n\
+                - 'rounded corners' → border-radius 12-16px on all major elements\n\
+                - 'minimal/clean' → generous whitespace, sans-serif, subtle shadows\n\
+                - 'dark mode' → only if the user explicitly asks for dark\n\
+                If the user's design request conflicts with your habits, the USER WINS. \
+                Read the user's design request CAREFULLY and double-check each constraint.\n\
+                \n\
+                IMPORTANT — FACTUAL ACCURACY RULE:\n\
+                Do NOT hallucinate facts: dates, names, places, biographical details, \
+                URLs, statistics. If you don't know a fact for certain:\n\
+                1. If web-search results are provided in your context (look for a \
+                   'Web search results' section in the system prompt), USE THEM as \
+                   the source of truth. Quote them accurately.\n\
+                2. If no search context, write a clear placeholder like '[Year — \
+                   please verify]' or '[Source needed]' and explicitly tell the user \
+                   that this detail should be checked.\n\
+                NEVER invent: birth/death dates, company founding stories, employment \
+                history, fake statistics. Saying 'I'm not certain about this detail' \
+                is INFINITELY BETTER than confidently inventing wrong facts.\n\
+                \n\
+                IMPORTANT — NO FAKE SOURCES OR CITATIONS:\n\
+                Do NOT add a 'Sources', 'References', 'További olvasmányok', or any \
+                similar citation list UNLESS actual web search results were provided \
+                in your context. Inventing source URLs (e.g., random tutorial sites, \
+                Wikipedia links you didn't see, books you didn't read) is misleading \
+                and damages user trust. If you have NO actual sources, simply OMIT \
+                the references section entirely."
                 .to_string(),
             ),
             true,

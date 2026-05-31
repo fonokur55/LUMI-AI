@@ -143,9 +143,27 @@ Translate the following English text to natural, fluent Hungarian. \
 1. Preserve ALL placeholders like «CODE_0», «CODE_1», «INLINE_0», «INLINE_2» etc. — keep them EXACTLY as they are, do NOT translate them.\n\
 2. Preserve the markdown formatting: headings (# ## ###), bold (**...**), italic (*...*), lists (- or *), tables.\n\
 3. Output ONLY the Hungarian translation. NO preamble like \"Here is the translation:\". NO explanations. NO afterword.\n\
-4. Use natural, idiomatic Hungarian — NOT word-for-word translation. Hungarian sentence structure (SOV preferred), Hungarian idioms.\n\
-5. Technical terms: keep widely-recognized English ones (e.g. \"HTML\", \"JavaScript\", \"div\", \"function\"); translate descriptive prose around them.\n\
-6. If the input is already in Hungarian or contains no translatable prose (only placeholders), return it unchanged.";
+\n\
+4. **NATURAL HUNGARIAN — THIS IS THE MOST IMPORTANT RULE:**\n\
+   - NEVER invent Hungarian words. If you don't know how to translate a term, use \
+     a well-known synonym or keep the English original (e.g., 'API', 'framework').\n\
+   - NEVER do word-for-word translation. English sentence structure does NOT work in Hungarian.\n\
+   - Use natural Hungarian sentence flow (SOV is common, but variable based on emphasis).\n\
+   - Examples of BAD vs GOOD:\n\
+     * BAD: 'programnyelő képzettség' (made-up word!) → GOOD: 'programozási nyelvtudás' or 'programozói ismeretek'\n\
+     * BAD: 'weboldal létrehozni' (English infinitive structure) → GOOD: 'weboldal készítése'\n\
+     * BAD: 'I am being able to' translated as 'képes vagyok lenni' → GOOD: 'képes vagyok'\n\
+     * BAD: 'körkörösítés' (made-up technical term) → GOOD: 'lekerekítés'\n\
+   - If a literal translation sounds awkward, REPHRASE the whole sentence naturally.\n\
+\n\
+5. Technical terms: keep widely-recognized English ones (HTML, JavaScript, CSS, div, \
+   function, framework, API); translate descriptive prose around them naturally.\n\
+\n\
+6. If the input is already in Hungarian or contains no translatable prose (only \
+   placeholders), return it unchanged.\n\
+\n\
+7. Tone: friendly, helpful, professional — like a knowledgeable Hungarian developer \
+   explaining to a colleague.";
 
 #[derive(Debug, Deserialize)]
 struct ChatChoice {
