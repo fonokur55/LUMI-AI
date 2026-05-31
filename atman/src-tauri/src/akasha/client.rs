@@ -298,7 +298,13 @@ pub async fn stream_chat(
         // emittáljuk, hogy a UI állapotgépe rendben legyen.
         if cancel.load(Ordering::Acquire) {
             eta.record_completion(ctx.slot, started.elapsed().as_millis() as u64, full.len());
-            let _ = app.emit("akasha-done", ());
+            // v0.2.6 - suppress mode: a translation flow majd a végén küldi
+            // az akasha-done-t. Ha most küldenénk, a frontend `streaming`-et
+            // false-ra állítaná, az indicator eltűnne, és a user 2-3 mp-ig
+            // "üres képet" látna mielőtt a Gemma magyar válasza megkezdődne.
+            if !suppress_frontend_tokens {
+                let _ = app.emit("akasha-done", ());
+            }
             return Ok(full);
         }
 
@@ -345,7 +351,10 @@ pub async fn stream_chat(
                 let data = line.trim_start_matches("data: ").trim();
                 if data == "[DONE]" {
                     eta.record_completion(ctx.slot, started.elapsed().as_millis() as u64, full.len());
-                    let _ = app.emit("akasha-done", ());
+                    // v0.2.6 - lásd a fenti suppress mode komment
+                    if !suppress_frontend_tokens {
+                        let _ = app.emit("akasha-done", ());
+                    }
                     return Ok(full);
                 }
                 if let Ok(parsed) = serde_json::from_str::<StreamChunk>(data) {
@@ -377,7 +386,10 @@ pub async fn stream_chat(
     }
 
     eta.record_completion(ctx.slot, started.elapsed().as_millis() as u64, full.len());
-    let _ = app.emit("akasha-done", ());
+    // v0.2.6 - lásd a fenti suppress mode komment
+    if !suppress_frontend_tokens {
+        let _ = app.emit("akasha-done", ());
+    }
     Ok(full)
 }
 

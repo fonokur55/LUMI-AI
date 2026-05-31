@@ -1,0 +1,139 @@
+/* =========================================================================
+   v0.2.6 - TranslationStatusModal
+   ========================================================================= */
+
+.translation-modal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  pointer-events: none;
+  animation: translation-modal-in 0.25s ease-out;
+}
+
+@keyframes translation-modal-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0);
+  }
+}
+
+.translation-modal__inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 22px 16px 18px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  border-radius: 16px;
+  box-shadow:
+    0 10px 40px rgba(59, 130, 246, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(20px);
+  max-width: 460px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  pointer-events: auto;
+}
+
+[data-theme="dark"] .translation-modal__inner {
+  background: rgba(30, 30, 32, 0.96);
+  border-color: rgba(96, 165, 250, 0.22);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.25);
+  color: #e8e8ea;
+}
+
+/* Ikon-rész: LUMI-logó + lebegő csillag */
+.translation-modal__icon {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.translation-modal__logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(59, 130, 246, 0.35));
+  animation: translation-modal-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes translation-modal-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.3));
+  }
+  50% {
+    transform: scale(1.06);
+    filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.5));
+  }
+}
+
+.translation-modal__sparkle {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  font-size: 14px;
+  animation: translation-modal-sparkle 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes translation-modal-sparkle {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: rotate(15deg) scale(1.2);
+  }
+}
+
+/* Szöveg-rész */
+.translation-modal__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.translation-modal__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 3px;
+}
+
+[data-theme="dark"] .translation-modal__title {
+  color: #f4f4f6;
+}
+
+.translation-modal__subtitle {
+  font-size: 12.5px;
+  color: rgba(0, 0, 0, 0.55);
+  line-height: 1.4;
+  /* Fade-in minden új feliratnál */
+  animation: translation-modal-subtitle-in 0.4s ease-out;
+}
+
+[data-theme="dark"] .translation-modal__subtitle {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+@keyframes translation-modal-subtitle-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -11,6 +11,7 @@ import {
 import { GenerationIndicator } from "./GenerationIndicator";
 import { CopyButton, MarkdownMessage } from "./MarkdownMessage";
 import { ThinkingIcon } from "./ThinkingIcon";
+import { TranslationStatusModal } from "./TranslationStatusModal";
 import "./ChatView.css";
 
 type Props = {
@@ -461,8 +462,16 @@ export function ChatView({
     </div>
   );
 
+  // v0.2.6 - Kód mód translation-flow: a Coder és a Gemma fordítás közti
+  // ~2-3 mp átmeneti csendre egy diszkrét lebegő doboz lép be, hogy a
+  // felhasználó tudja: AKASHA még dolgozik, ne kattintgasson ide-oda.
+  // Eltűnik amint az első magyar token megérkezik (streamBuf nem üres).
+  const showTranslationModal =
+    phase === "translating" && streaming && streamBuf.length === 0;
+
   return (
     <div className={`chat-view ${showWelcome ? "chat-view--welcome" : ""}`}>
+      <TranslationStatusModal visible={showTranslationModal} />
       {messages.length > 0 && currentTitle && (
         <div className="chat-view__title">{currentTitle}</div>
       )}

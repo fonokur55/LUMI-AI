@@ -4,6 +4,9 @@
   height: 100%;
   padding: 16px 24px 20px;
   background: var(--bg-app);
+  /* v0.2.6 - a TranslationStatusModal abszolút pozícionálása ehhez
+     az alapszinthez igazodik (közepe a chat-view közepe). */
+  position: relative;
 }
 
 /* Streaming-mascot: a composer (beviteli mező) jobb peremén "üldögél" -
