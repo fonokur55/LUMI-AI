@@ -75,17 +75,20 @@ pub const CATALOG: &[ExpertEntry] = &[
     },
     ExpertEntry {
         slot: AkashaSlot::Logika,
-        // v0.2.2 (A-mínusz csomag): Qwen 2.5 3B Instruct → Phi-3.5 mini.
-        // A Microsoft Phi-3.5 mini (3.8B) **kifejezetten matek + logika
-        // fókuszú** fine-tune-nal készült, és multilingual training data-ja
-        // miatt jobb magyar nyelvi tudása van mint a Qwen 3B-nek. A
-        // "kettőszám"-féle zagyvaság itt nem fordul elő.
-        // Méret: 2.0 GB → 2.3 GB (Q4_K_M).
-        repo: "bartowski/Phi-3.5-mini-instruct-GGUF",
-        file: "Phi-3.5-mini-instruct-Q4_K_M.gguf",
-        display_name: "Logika — Phi-3.5 mini (3.8B)",
-        description: "Matek, logika, érvelés (Chain-of-Thought) — Microsoft",
-        size_gb: 2.3,
+        // v0.2.3 (B opció): Phi-3.5 mini → Gemma 2 9B Q3_K_M.
+        // A Phi-3.5 mini magyarul érthető szöveget adott, de a matek-
+        // levezetésben hibázott (a `(2x-3)(x+5)` egyenletre `x=22.5`-öt
+        // adott, miközben nincs valós megoldás — diszkrimináns = -28).
+        // A Gemma 2 9B *natívan* tudja a magyart (a kis 2B-s testvérétől
+        // örökölt erősség, csak nagyobb kapacitással), és a 9B mérettől
+        // a Gemma család tényleg tud matekot. RAM-igény ~5 GB egyszerre,
+        // a router unload-flow miatt 8 GB-os gépeken is OK.
+        // Méret: 2.3 GB → 4.2 GB (Q3_K_M).
+        repo: "bartowski/gemma-2-9b-it-GGUF",
+        file: "gemma-2-9b-it-Q3_K_M.gguf",
+        display_name: "Logika — Gemma 2 9B",
+        description: "Matek, logika, érvelés magyarul (Google Gemma 2 9B)",
+        size_gb: 4.2,
         bundled: false,
     },
     ExpertEntry {
