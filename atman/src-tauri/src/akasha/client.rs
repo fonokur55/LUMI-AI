@@ -171,25 +171,50 @@ pub async fn stream_chat(
         .build()
         .map_err(|e| e.to_string())?;
 
-    // A DeepSeek-R1 alapú GGUF modellek (eco/brain/creative) reasoning-modellek:
-    // `thinking = 1` esetén minden tokent a `reasoning_content` mezőbe küldenek és a
-    // `content` üres marad - emiatt a régi kód semmit nem látott a streamből.
-    // - `reasoning_effort: "none"` (OpenAI-kompat): teljesen kikapcsolja a thinkinget,
-    //   a modell rögtön a `content`-be írja a választ.
-    // - `chat_template_kwargs.enable_thinking=false`: llama.cpp-specifikus ugyanerre.
-    // - A stream parser pedig fallback-ként olvassa a `reasoning_content`-et is, ha
-    //   valamiért egy modell mégis oda írna.
-    // - `max_tokens`: kemény plafon, hogy egy reasoning-loop ne fogyassza el
-    //   az egész context-et (4096) - 1024 már jócskán elég egy beszélgetésre.
-    // - `repeat_penalty`: 1.15-ös büntetés segít megtörni a kis distill modellek
-    //   "fitted with whom? fitted with whom?..." típusú szó-ismétlését.
+    // v0.2.2: kibővített inference-paraméterek, hogy elkerüljük a v0.2.1-ben
+    // észlelt két nagy hibát:
+    //
+    //   1. **Generálás-loop**: a Kód modell egyszer már le-generálta a HTML-t,
+    //      majd kiírt egy "Szia!"-t és újrakezdte (lásd Áron screenshotja a
+    //      Steve Jobs oldalról). Az ok: a modell hallucinált egy stop-token-t,
+    //      de a kérésben nem volt explicit `stop`-lista, ezért tovább ment.
+    //      A `stop` mező explicit felsorolja a modern modell-chat-templátok
+    //      end-of-turn markereit (Qwen/ChatML, Gemma, Llama 3, Phi/GPT).
+    //
+    //   2. **Túl rövid kód-válasz**: az 1024 token plafon egy közepes HTML
+    //      fájlt is csonkolt → felemelve 4096-ra. Az n_ctx=8192 (v0.2.1)
+    //      bőven elbírja: 4096 max-out + ~3000 system prompt + ~500 user
+    //      üzenet még belefér.
+    //
+    //   3. **Ismétlés-elkerülés**: a `repeat_penalty` 1.15 → 1.18 és
+    //      `frequency_penalty` 0.1, hogy a "ugyanaz a mondat 3x" típusú
+    //      hallucinációkat csillapítsuk.
+    //
+    // Megtartottuk a reasoning-fallback flageket is (`reasoning_effort: "none"`,
+    // `enable_thinking: false`) — ezek nem hibáznak ha a modell nem reasoning-
+    // típusú, csak a thinking-tokeneket kerülik el.
     let body = serde_json::json!({
         "model": model_id,
         "messages": api_messages,
         "stream": true,
         "temperature": 0.7,
-        "max_tokens": 1024,
-        "repeat_penalty": 1.15,
+        "max_tokens": 4096,
+        "repeat_penalty": 1.18,
+        "frequency_penalty": 0.1,
+        "presence_penalty": 0.0,
+        "stop": [
+            // Qwen / ChatML (Qwen 2.5 Coder 7B is ezt használja)
+            "<|im_end|>",
+            "<|im_start|>",
+            // Phi-3.5 chat template
+            "<|end|>",
+            "<|endoftext|>",
+            // Gemma 2 chat template
+            "<end_of_turn>",
+            "<start_of_turn>",
+            // Llama 3 család
+            "<|eot_id|>",
+        ],
         "reasoning_effort": "none",
         "chat_template_kwargs": { "enable_thinking": false },
     });

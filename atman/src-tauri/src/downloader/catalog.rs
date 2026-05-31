@@ -75,26 +75,32 @@ pub const CATALOG: &[ExpertEntry] = &[
     },
     ExpertEntry {
         slot: AkashaSlot::Logika,
-        // v0.2.1: Qwen 2.5 Math 1.5B helyett a Qwen 2.5 3B Instruct.
-        // A Math-modell magyarul érthetetlen szöveget generált (1.5B + math-
-        // only fine-tune kombináció). A 3B Instruct általános-célú, de
-        // jelentősen jobb HU + tud Chain-of-Thought-ot és alap matekot.
-        // Méret: 1.0 GB → 2.0 GB (még mindig kicsi), minőség lényegesen
-        // jobb.
-        repo: "bartowski/Qwen2.5-3B-Instruct-GGUF",
-        file: "Qwen2.5-3B-Instruct-Q4_K_M.gguf",
-        display_name: "Logika — Qwen 2.5 3B Instruct",
-        description: "Matek, logika, érvelés (Chain-of-Thought) magyarul",
-        size_gb: 2.0,
+        // v0.2.2 (A-mínusz csomag): Qwen 2.5 3B Instruct → Phi-3.5 mini.
+        // A Microsoft Phi-3.5 mini (3.8B) **kifejezetten matek + logika
+        // fókuszú** fine-tune-nal készült, és multilingual training data-ja
+        // miatt jobb magyar nyelvi tudása van mint a Qwen 3B-nek. A
+        // "kettőszám"-féle zagyvaság itt nem fordul elő.
+        // Méret: 2.0 GB → 2.3 GB (Q4_K_M).
+        repo: "bartowski/Phi-3.5-mini-instruct-GGUF",
+        file: "Phi-3.5-mini-instruct-Q4_K_M.gguf",
+        display_name: "Logika — Phi-3.5 mini (3.8B)",
+        description: "Matek, logika, érvelés (Chain-of-Thought) — Microsoft",
+        size_gb: 2.3,
         bundled: false,
     },
     ExpertEntry {
         slot: AkashaSlot::Kod,
-        repo: "bartowski/Qwen2.5-Coder-3B-Instruct-GGUF",
-        file: "Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf",
-        display_name: "Kód — Qwen 2.5 Coder 3B",
+        // v0.2.2 (A-mínusz csomag): Qwen 2.5 Coder 3B → Qwen 2.5 Coder 7B.
+        // A 3B Coder magyar magyarázata pocsék volt ("magyarosz termékek",
+        // "Életvények"). A 7B verziónál jobb a magyar nyelvi tudás +
+        // jelentősen erősebb kód-generálás (a Coder család 7B-től kezd
+        // tényleg produktív lenni). RAM-igény ~4.5 GB egyszerre, ami a
+        // router unload-flow miatt OK 8 GB-os gépeken is.
+        repo: "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
+        file: "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+        display_name: "Kód — Qwen 2.5 Coder 7B",
         description: "Programozás: Rust, Python, TypeScript, JS, C++, SQL",
-        size_gb: 2.0,
+        size_gb: 4.4,
         bundled: false,
     },
 ];
